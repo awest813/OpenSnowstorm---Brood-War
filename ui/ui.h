@@ -1629,6 +1629,10 @@ struct ui_functions: ui_util_functions {
 			case live_command_kind_t::build_place: fill = 117; break;
 			case live_command_kind_t::research: fill = 68; break;
 			case live_command_kind_t::upgrade: fill = 54; break;
+			case live_command_kind_t::tactical_stop: fill = 33; break;
+			case live_command_kind_t::tactical_hold_position: fill = 74; break;
+			case live_command_kind_t::tactical_attack_move_mode: fill = 140; break;
+			case live_command_kind_t::tactical_patrol_mode: fill = 111; break;
 			case live_command_kind_t::ability_cancel: fill = 33; break;
 			case live_command_kind_t::ability_burrow_toggle: fill = 48; break;
 			case live_command_kind_t::ability_siege_toggle: fill = 74; break;
@@ -1649,6 +1653,10 @@ struct ui_functions: ui_util_functions {
 			     (cmd.kind == live_command_kind_t::ability_liftoff_land_toggle &&
 			      live_build_placement_command.kind == live_command_kind_t::ability_liftoff_land_toggle &&
 			      cmd.unit_type == live_build_placement_command.unit_type))) {
+				line_rectangle(data, data_pitch, rect{slot.from + xy(1, 1), slot.to - xy(1, 1)}, 255);
+			}
+			if ((cmd.kind == live_command_kind_t::tactical_attack_move_mode && pending_order_mode == pending_order_mode_t::attack_move) ||
+			    (cmd.kind == live_command_kind_t::tactical_patrol_mode && pending_order_mode == pending_order_mode_t::patrol)) {
 				line_rectangle(data, data_pitch, rect{slot.from + xy(1, 1), slot.to - xy(1, 1)}, 255);
 			}
 			int payload_id = live_command_payload_id(cmd);
@@ -1932,6 +1940,10 @@ struct ui_functions: ui_util_functions {
 		build_place,
 		research,
 		upgrade,
+		tactical_stop,
+		tactical_hold_position,
+		tactical_attack_move_mode,
+		tactical_patrol_mode,
 		ability_cancel,
 		ability_burrow_toggle,
 		ability_siege_toggle,
@@ -1982,6 +1994,58 @@ struct ui_functions: ui_util_functions {
 		return result;
 	}
 
+	template<typename pred_F>
+	bool any_local_selected_unit(pred_F&& pred) {
+		if (!has_local_player()) return false;
+		for (auto uid : current_selection) {
+			unit_t* u = get_unit(uid);
+			if (!u || unit_dead(u) || us_hidden(u)) continue;
+			if (!unit_is_local_controllable(u)) continue;
+			if (pred(u)) return true;
+		}
+		return false;
+	}
+
+	bool has_local_controllable_selection() {
+		return any_local_selected_unit([](const unit_t*) { return true; });
+	}
+
+	const order_type_t* hold_order_for_unit(const unit_t* source) const {
+		if (unit_is_carrier(source)) return get_order_type(Orders::CarrierHoldPosition);
+		if (unit_is_reaver(source)) return get_order_type(Orders::ReaverHoldPosition);
+		if (unit_is_queen(source)) return get_order_type(Orders::QueenHoldPosition);
+		if (unit_is(source, UnitTypes::Zerg_Scourge) || unit_is(source, UnitTypes::Zerg_Infested_Terran)) return get_order_type(Orders::SuicideHoldPosition);
+		if (unit_is(source, UnitTypes::Terran_Medic)) return get_order_type(Orders::MedicHoldPosition);
+		return get_order_type(Orders::HoldPosition);
+	}
+
+	bool live_command_can_tactical_stop() {
+		const order_type_t* order = get_order_type(Orders::Stop);
+		return any_local_selected_unit([&](const unit_t* source) {
+			return unit_can_receive_order(source, order, local_player_id);
+		});
+	}
+
+	bool live_command_can_tactical_hold_position() {
+		return any_local_selected_unit([&](const unit_t* source) {
+			return unit_can_receive_order(source, hold_order_for_unit(source), local_player_id);
+		});
+	}
+
+	bool live_command_can_tactical_attack_move_mode() {
+		const order_type_t* order = get_order_type(Orders::AttackMove);
+		return any_local_selected_unit([&](const unit_t* source) {
+			return unit_can_receive_order(source, order, local_player_id);
+		});
+	}
+
+	bool live_command_can_tactical_patrol_mode() {
+		const order_type_t* order = get_order_type(Orders::Patrol);
+		return any_local_selected_unit([&](const unit_t* source) {
+			return unit_can_receive_order(source, order, local_player_id);
+		});
+	}
+
 	const order_type_t* resolve_live_build_order(const unit_t* u, const unit_type_t* unit_type) const {
 		if (!u || !unit_type) return nullptr;
 		if (ut_addon(unit_type)) return get_order_type(Orders::PlaceAddon);
@@ -2019,7 +2083,19 @@ struct ui_functions: ui_util_functions {
 		return can_place_building(u, local_player_id, cmd.unit_type, pos, false, false);
 	}
 
-	bool live_command_is_enabled(const live_command_t& cmd, const unit_t* source) const {
+	bool live_command_is_enabled(const live_command_t& cmd, const unit_t* source) {
+		switch (cmd.kind) {
+		case live_command_kind_t::tactical_stop:
+			return live_command_can_tactical_stop();
+		case live_command_kind_t::tactical_hold_position:
+			return live_command_can_tactical_hold_position();
+		case live_command_kind_t::tactical_attack_move_mode:
+			return live_command_can_tactical_attack_move_mode();
+		case live_command_kind_t::tactical_patrol_mode:
+			return live_command_can_tactical_patrol_mode();
+		default:
+			break;
+		}
 		if (!source || source->owner != local_player_id) return false;
 		switch (cmd.kind) {
 		case live_command_kind_t::train:
@@ -2036,6 +2112,11 @@ struct ui_functions: ui_util_functions {
 			return cmd.tech_type && unit_can_research(source, cmd.tech_type, local_player_id) && has_available_resources_for(local_player_id, cmd.tech_type);
 		case live_command_kind_t::upgrade:
 			return cmd.upgrade_type && unit_can_upgrade(source, cmd.upgrade_type, local_player_id) && has_available_resources_for(local_player_id, cmd.upgrade_type);
+		case live_command_kind_t::tactical_stop:
+		case live_command_kind_t::tactical_hold_position:
+		case live_command_kind_t::tactical_attack_move_mode:
+		case live_command_kind_t::tactical_patrol_mode:
+			return false;
 		case live_command_kind_t::ability_cancel:
 			return live_command_can_cancel(source);
 		case live_command_kind_t::ability_burrow_toggle:
@@ -2072,6 +2153,14 @@ struct ui_functions: ui_util_functions {
 			return cmd.tech_type ? (int)cmd.tech_type->id : 0;
 		case live_command_kind_t::upgrade:
 			return cmd.upgrade_type ? (int)cmd.upgrade_type->id : 0;
+		case live_command_kind_t::tactical_stop:
+			return 911;
+		case live_command_kind_t::tactical_hold_position:
+			return 912;
+		case live_command_kind_t::tactical_attack_move_mode:
+			return 913;
+		case live_command_kind_t::tactical_patrol_mode:
+			return 914;
 		case live_command_kind_t::ability_cancel:
 			return 901;
 		case live_command_kind_t::ability_burrow_toggle:
@@ -2094,6 +2183,18 @@ struct ui_functions: ui_util_functions {
 			return 909;
 		}
 		return 0;
+	}
+
+	bool live_command_requires_single_source(live_command_kind_t kind) const {
+		switch (kind) {
+		case live_command_kind_t::tactical_stop:
+		case live_command_kind_t::tactical_hold_position:
+		case live_command_kind_t::tactical_attack_move_mode:
+		case live_command_kind_t::tactical_patrol_mode:
+			return false;
+		default:
+			return true;
+		}
 	}
 
 	const tech_type_t* live_cloak_tech_for_unit(const unit_t* source) const {
@@ -2255,8 +2356,25 @@ struct ui_functions: ui_util_functions {
 			cancel_live_build_placement();
 			return;
 		}
+		if (!has_local_controllable_selection()) {
+			cancel_live_build_placement();
+			return;
+		}
+
+		auto add_tactical = [&](live_command_kind_t kind, bool enabled) {
+			if (!enabled) return;
+			if (live_commands.size() >= live_command_slots_n) return;
+			live_command_t cmd;
+			cmd.kind = kind;
+			live_commands.push_back(cmd);
+		};
+
 		unit_t* source = get_single_local_selected_unit();
 		if (!source || source->owner != local_player_id) {
+			add_tactical(live_command_kind_t::tactical_stop, live_command_can_tactical_stop());
+			add_tactical(live_command_kind_t::tactical_hold_position, live_command_can_tactical_hold_position());
+			add_tactical(live_command_kind_t::tactical_attack_move_mode, live_command_can_tactical_attack_move_mode());
+			add_tactical(live_command_kind_t::tactical_patrol_mode, live_command_can_tactical_patrol_mode());
 			cancel_live_build_placement();
 			return;
 		}
@@ -2424,8 +2542,8 @@ struct ui_functions: ui_util_functions {
 
 		auto& cmd = live_commands[index];
 		unit_t* source = get_single_local_selected_unit();
-		if (!source) return false;
 		if (!live_command_is_enabled(cmd, source)) return false;
+		if (live_command_requires_single_source(cmd.kind) && !source) return false;
 
 		sync_action_selection_from_current();
 		if (action_st.selection.at(local_player_id).empty()) return false;
@@ -2451,6 +2569,24 @@ struct ui_functions: ui_util_functions {
 			break;
 		case live_command_kind_t::upgrade:
 			ok = action_upgrade(local_player_id, cmd.upgrade_type);
+			break;
+		case live_command_kind_t::tactical_stop:
+			cancel_live_build_placement();
+			ok = action_stop(local_player_id, false);
+			break;
+		case live_command_kind_t::tactical_hold_position:
+			cancel_live_build_placement();
+			ok = action_hold_position(local_player_id, false);
+			break;
+		case live_command_kind_t::tactical_attack_move_mode:
+			cancel_live_build_placement();
+			pending_order_mode = pending_order_mode_t::attack_move;
+			ok = true;
+			break;
+		case live_command_kind_t::tactical_patrol_mode:
+			cancel_live_build_placement();
+			pending_order_mode = pending_order_mode_t::patrol;
+			ok = true;
 			break;
 		case live_command_kind_t::ability_cancel:
 		case live_command_kind_t::ability_burrow_toggle:

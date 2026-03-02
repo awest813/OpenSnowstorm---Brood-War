@@ -50,6 +50,10 @@ verifiable set of user-visible milestones:
   High Templar / Dark Templar when the relevant tech is researched.
 - **Tab: center camera on selection** — pressing Tab in live map mode centers the
   viewport on the centroid of the current selection.
+- **Multi-selection tactical command panel parity**: when multiple local units are
+  selected, the command panel now exposes tactical controls (stop, hold,
+  attack-move mode, patrol mode) without requiring hotkeys; attack/patrol mode
+  selection continues to apply to the next right click target.
 - **Terran lift off / land + Ghost cancel-nuke parity**: live map mode now
   exposes a context-sensitive `l` path (unload-all first, then lift off / land
   for Terran flying-building structures), landing uses armed placement flow, and

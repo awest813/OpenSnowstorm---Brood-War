@@ -143,7 +143,7 @@ Notes:
 Controls in map mode:
 
 - **Left click/drag**: select units
-- **Left click command panel**: issue train/morph/research/upgrade and context-sensitive tactical commands
+- **Left click command panel**: issue tactical commands for multi-selection, plus train/morph/research/upgrade and context-sensitive abilities for single-unit selection
 - **Left click map (while a building or landing command is armed)**: place building / land building
 - **Right click**: issue default order (or cancel armed building/landing placement)
 - **Middle mouse drag**: move camera
