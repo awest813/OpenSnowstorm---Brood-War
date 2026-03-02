@@ -5,6 +5,7 @@
 #include "actions.h"
 #include "replay.h"
 #include "replay_saver.h"
+#include "sync_protocol.h"
 
 #include <chrono>
 #include <random>
@@ -160,26 +161,9 @@ struct sync_server_noop {
 	}
 };
 
-namespace sync_messages {
-	enum {
-		id_client_uid,
-		id_client_frame,
-		id_occupy_slot,
-		id_start_game,
-		id_game_info,
-		id_set_race,
-		id_game_started,
-		id_leave_game,
-		id_insync_check,
-		id_create_unit,
-		id_kill_unit,
-		id_remove_unit,
-		id_custom_action
-	};
-	enum {
-		id_game_started_escape = 0xdc
-	};
-}
+// sync_messages protocol IDs are now defined in sync_protocol.h (Phase 1
+// decomposition).  sync.h includes sync_protocol.h above; existing code that
+// references sync_messages::id_* continues to work without modification.
 
 struct sync_functions: action_functions {
 	sync_state& sync_st;
