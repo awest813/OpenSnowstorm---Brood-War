@@ -33,18 +33,39 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <cstdio>
 
 namespace bwgame {
 
-// Protocol version.
+// ---------------------------------------------------------------------------
+// Protocol version
+// ---------------------------------------------------------------------------
 //
-// Bump this when wire-incompatible changes are made to sync message
-// semantics or layout.  Peers should compare versions during handshake
+// Bump sync_protocol_version when wire-incompatible changes are made to sync
+// message semantics or layout.  Peers MUST compare versions during handshake
 // to detect incompatible builds before gameplay begins.
 //
+// Compatibility policy
+// --------------------
+// - A peer that reports a version LOWER than sync_protocol_min_peer_version
+//   must be rejected; it is too old to safely interoperate.
+// - A peer that reports a version HIGHER than sync_protocol_version may be
+//   accepted for the current session but should emit a diagnostic warning,
+//   since the remote end may use message types or semantics unknown to this
+//   build.
+// - Version numbers are monotonically increasing unsigned integers; they do
+//   not encode major/minor/patch components.
+//
 // Version history:
-//   1 – initial versioned protocol (Phase 2 BW compatibility overhaul)
+//   1 – initial versioned protocol (Phase 2 BW compatibility overhaul):
+//       desync_report struct, richer insync hash (frame + owner + order),
+//       patrol (action 29) and land (action 36) actions.
+
 static constexpr uint32_t sync_protocol_version = 1;
+
+// Oldest peer version that this build will accept during handshake.
+// Raise this when a past version is known to produce incorrect behaviour.
+static constexpr uint32_t sync_protocol_min_peer_version = 1;
 
 namespace sync_messages {
 
@@ -73,11 +94,23 @@ enum {
 
 } // namespace sync_messages
 
-// Structured desync report emitted on first divergence detection.
+// ---------------------------------------------------------------------------
+// Structured desync report
+// ---------------------------------------------------------------------------
 //
-// When an insync hash mismatch is detected, a desync_report captures the
-// diagnostic context at the point of divergence.  Consumers (logs, CI
-// harnesses, replay tools) can inspect this to narrow down the cause.
+// Emitted on the first insync hash mismatch.  Consumers (logs, CI harnesses,
+// replay tools) can inspect desync_state::desync_reports to narrow down the
+// cause without attaching a debugger.
+//
+// Fields
+// ------
+//   local_frame         – st.current_frame at the moment of detection.
+//   hash_index          – which slot in the rolling hash ring was checked.
+//   expected_hash       – the hash computed locally.
+//   received_hash       – the hash reported by the diverging peer.
+//   client_local_id     – internal client ID of the diverging peer (-1 if
+//                         unknown, e.g. when the report is self-generated).
+//   client_player_slot  – BW player-slot index of the peer (-1 if unknown).
 struct desync_report {
 	int local_frame = -1;
 	uint8_t hash_index = 0;
@@ -86,6 +119,54 @@ struct desync_report {
 	int client_local_id = -1;
 	int client_player_slot = -1;
 };
+
+// ---------------------------------------------------------------------------
+// Desync report formatter
+// ---------------------------------------------------------------------------
+//
+// Writes a human-readable summary of all accumulated desync reports to the
+// FILE* sink (pass stderr for CI consumption, or a log file for persistent
+// diagnostics).
+//
+// Output format (one block per report, machine-parseable by key: value):
+//
+//   [desync] report #N
+//     local_frame        : <frame>
+//     hash_index         : <index>
+//     expected_hash      : 0x<hex>
+//     received_hash      : 0x<hex>
+//     client_local_id    : <id>
+//     client_player_slot : <slot>
+//
+// Returns the number of reports written (0 if the vector is empty).
+inline int write_desync_reports(
+    FILE* sink,
+    const desync_report* reports,
+    size_t count)
+{
+	if (!sink || count == 0) return 0;
+
+	for (size_t i = 0; i < count; ++i) {
+		const desync_report& r = reports[i];
+		fprintf(sink,
+			"[desync] report #%zu\n"
+			"  local_frame        : %d\n"
+			"  hash_index         : %u\n"
+			"  expected_hash      : 0x%08x\n"
+			"  received_hash      : 0x%08x\n"
+			"  client_local_id    : %d\n"
+			"  client_player_slot : %d\n",
+			i,
+			r.local_frame,
+			(unsigned)r.hash_index,
+			(unsigned)r.expected_hash,
+			(unsigned)r.received_hash,
+			r.client_local_id,
+			r.client_player_slot);
+	}
+	fflush(sink);
+	return (int)count;
+}
 
 } // namespace bwgame
 

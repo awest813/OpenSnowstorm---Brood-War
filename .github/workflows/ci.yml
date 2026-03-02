@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build:
+    name: Build (${{ matrix.compiler }}, ${{ matrix.build_type }})
+    runs-on: ubuntu-22.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        build_type: [Debug, Release]
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+          - compiler: clang
+            cc: clang
+            cxx: clang++
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            libsdl2-dev \
+            ${{ matrix.compiler == 'clang' && 'clang libc++-dev libc++abi-dev' || 'g++' }}
+
+      - name: Configure (UI + mini-openbwapi)
+        run: |
+          EXTRA_FLAGS=""
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            EXTRA_FLAGS="-DCMAKE_CXX_FLAGS=-stdlib=libc++ -DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++"
+          fi
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+            -DOPENSNOWSTORM_BUILD_UI=ON \
+            -DOPENSNOWSTORM_BUILD_BWAPI=ON \
+            $EXTRA_FLAGS
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+      - name: Verify gfxtest binary exists
+        run: test -f build/gfxtest
+
+  # ---------------------------------------------------------------------------
+  # Headless-only build (no SDL2) to ensure mini-openbwapi compiles cleanly
+  # on a minimal toolchain.
+  # ---------------------------------------------------------------------------
+  build-no-ui:
+    name: Build mini-openbwapi only (no SDL2)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends cmake g++
+
+      - name: Configure (mini-openbwapi only)
+        run: |
+          cmake -B build-no-ui \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DOPENSNOWSTORM_BUILD_UI=OFF \
+            -DOPENSNOWSTORM_BUILD_BWAPI=ON
+
+      - name: Build
+        run: cmake --build build-no-ui --parallel $(nproc)
+
+  # ---------------------------------------------------------------------------
+  # Replay validation gate.
+  # Runs only when a test replay is present in the repository.
+  # Add a small deterministic replay to maps/test.rep to enable this job.
+  # ---------------------------------------------------------------------------
+  validate-replay:
+    name: Validate replay (compatibility gate)
+    runs-on: ubuntu-22.04
+    # Skip this job when no test replay has been committed yet.
+    if: ${{ false }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends cmake libsdl2-dev g++
+
+      - name: Configure & build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel $(nproc)
+
+      - name: Run replay validation
+        run: ./build/gfxtest --validate-replay --replay maps/test.rep
