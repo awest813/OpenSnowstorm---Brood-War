@@ -92,8 +92,8 @@ jobs:
   validate-replay:
     name: Validate replay (compatibility gate)
     runs-on: ubuntu-22.04
-    # Skip this job when no test replay has been committed yet.
-    if: ${{ false }}
+    # Skip this job when deterministic fixtures are not yet committed.
+    if: ${{ hashFiles('maps/test.rep', 'maps/test.hashes') != '' }}
 
     steps:
       - name: Checkout

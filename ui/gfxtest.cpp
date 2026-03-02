@@ -78,6 +78,16 @@ struct main_t {
 
 	a_map<int, std::unique_ptr<saved_state>> saved_states;
 
+	void save_replay_state_if_missing(int frame) {
+		if (saved_states.find(frame) != saved_states.end()) return;
+
+		auto v = std::make_unique<saved_state>();
+		v->st = copy_state(ui.st);
+		v->action_st = copy_state(ui.action_st, ui.st, v->st);
+		v->apm = ui.apm;
+		saved_states[frame] = std::move(v);
+	}
+
 	void reset() {
 		saved_states.clear();
 		ui.reset();
@@ -104,23 +114,7 @@ struct main_t {
 			if (ui.is_replay_mode) {
 				int save_interval = 10 * 1000 / 42;
 				if (ui.st.current_frame == 0 || ui.st.current_frame % save_interval == 0) {
-					auto i = saved_states.find(ui.st.current_frame);
-					if (i == saved_states.end()) {
-						auto v = std::make_unique<saved_state>();
-						v->st = copy_state(ui.st);
-						v->action_st = copy_state(ui.action_st, ui.st, v->st);
-						v->apm = ui.apm;
-
-						a_map<int, std::unique_ptr<saved_state>> new_saved_states;
-						new_saved_states[ui.st.current_frame] = std::move(v);
-						while (!saved_states.empty()) {
-							auto i = saved_states.begin();
-							auto v = std::move(*i);
-							saved_states.erase(i);
-							new_saved_states[v.first] = std::move(v.second);
-						}
-						std::swap(saved_states, new_saved_states);
-					}
+					save_replay_state_if_missing(ui.st.current_frame);
 				}
 				ui.replay_functions::next_frame();
 			} else {
@@ -133,15 +127,18 @@ struct main_t {
 		if (ui.is_replay_mode) {
 			if (!ui.is_done() || ui.st.current_frame != ui.replay_frame) {
 				if (ui.st.current_frame != ui.replay_frame) {
-					if (ui.st.current_frame != ui.replay_frame) {
-						auto i = saved_states.lower_bound(ui.replay_frame);
-						if (i != saved_states.begin()) --i;
-						auto& v = i->second;
-						if (ui.st.current_frame > ui.replay_frame || v->st.current_frame > ui.st.current_frame) {
-							ui.st = copy_state(v->st);
-							ui.action_st = copy_state(v->action_st, v->st, ui.st);
-							ui.apm = v->apm;
-						}
+					save_replay_state_if_missing(ui.st.current_frame);
+					auto i = saved_states.lower_bound(ui.replay_frame);
+					if (i == saved_states.end()) {
+						--i;
+					} else if (i->first != ui.replay_frame && i != saved_states.begin()) {
+						--i;
+					}
+					auto& v = i->second;
+					if (ui.st.current_frame > ui.replay_frame || v->st.current_frame > ui.st.current_frame) {
+						ui.st = copy_state(v->st);
+						ui.action_st = copy_state(v->action_st, v->st, ui.st);
+						ui.apm = v->apm;
 					}
 					if (ui.st.current_frame < ui.replay_frame) {
 						for (size_t i = 0; i != 32 && ui.st.current_frame != ui.replay_frame; ++i) {
@@ -1628,4 +1625,3 @@ int main(int argc, char** argv) {
 
 	return 0;
 }
-

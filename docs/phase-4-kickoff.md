@@ -33,6 +33,19 @@ verifiable set of user-visible milestones:
 
 ---
 
+
+## Progress update (started)
+
+- Added a replay seek-state resilience fix in `ui/gfxtest.cpp` to prevent early
+  replay-frame seek/rewind paths from dereferencing an empty saved-state map.
+- Extended `docs/broodwar-compatibility.md` with a Phase 4 campaign-readiness
+  tracker (triggers, briefing flow, save/load) including deterministic commands
+  that define pass/fail once fixtures are landed.
+- Remaining immediate slice to keep driving: commit the first user-facing replay
+  fixture (`maps/test.rep` + `maps/test.hashes`) and enable the CI replay gate.
+
+---
+
 ## Kickoff workstreams
 
 ### Workstream A — Playable local session quality

@@ -59,6 +59,29 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | Actions 55–58, 60–62, 70–71, 89, 91 | `actions.h` | Save/load game, restart, game-speed changes, pause/resume, vision toggle, allied-victory toggle, and BW replay markers are now consumed cleanly. |
 | Replay hash fixture tooling | `ui/gfxtest.cpp` | `--record-hashes` emits deterministic frame-hash fixtures at configurable intervals; `--verify-hashes` asserts replay checkpoints against those fixtures. |
 
+### Changes landed (Phase 4 kickoff)
+
+| Change | Files | What it enables |
+|---|---|---|
+| Replay seek-state bootstrap hardening | `ui/gfxtest.cpp` | Replay frame seeking now guarantees at least one snapshot before lookup, avoids empty-state dereference during early seek/rewind transitions, and preserves exact-frame snapshot reuse when available. |
+| Conditional replay CI gate activation | `.github/workflows/ci.yml` | The `validate-replay` job now auto-enables when `maps/test.rep` and `maps/test.hashes` exist, keeping the gate ready without forcing failures before fixtures land. |
+
+## Campaign-readiness tracker (Phase 4 foundation)
+
+| Area | Priority | Status | Current blocker | Deterministic check |
+|---|---|---|---|---|
+| Trigger behavior parity (mission progression) | P0 | **Planned** | Trigger op coverage is not yet mapped to campaign-critical mission gates. | `./gfxtest --validate-replay --replay <campaign-trigger-fixture.rep>` must print `validate: PASS` and exit `0` once fixture is landed. |
+| Briefing entry/exit flow stability | P0 | **Planned** | No dedicated fixture yet for briefing-to-mission transition loop and cancel/continue handling. | `./gfxtest --verify-hashes <briefing-flow.hashes> --replay <briefing-flow.rep>` must print `verify-hashes: PASS` and exit `0` once fixture is landed. |
+| Save/load state restore invariants | P1 | **Planned** | Save-state schema/compatibility strategy is not documented with a replay-backed restore assertion. | `./gfxtest --verify-hashes <save-load-restore.hashes> --replay <save-load-restore.rep>` must print `verify-hashes: PASS` and exit `0` once fixture is landed. |
+
+### Phase 4 kickoff owners / next slices
+
+| Slice | Owner | Next concrete step |
+|---|---|---|
+| Trigger coverage audit | Engine gameplay | Enumerate mission-critical trigger opcodes and create one replay fixture per top-priority opcode family. |
+| Briefing flow scaffolding | UI/runtime | Add one deterministic fixture that enters briefing and transitions to mission start without soft-lock. |
+| Save/load foundation plan | Engine state/replay | Document save-state schema boundary and add a restore hash-check fixture. |
+
 ### Validation command (Phase 2 replay sanity check)
 
 - Command: `./gfxtest --validate-replay --replay <path/to/replay.rep>`
