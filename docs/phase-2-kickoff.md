@@ -28,6 +28,7 @@ Phase 2 targets reliability and diagnosability at the sync/replay boundary. For 
 3. **Replay validation pass**
    - Add a replay sanity check command that verifies header and frame stream consistency.
    - Store a short compatibility checklist in docs with command + expected result.
+   - Implemented command: `gfxtest --validate-replay --replay <file.rep>` (emits `validate: PASS` on success, `validate: FAIL (...)` on malformed/incompatible replays).
 
 ## Exit criteria for Phase 2 kickoff
 

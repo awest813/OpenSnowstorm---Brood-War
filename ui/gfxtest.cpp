@@ -12,6 +12,7 @@
 #include <thread>
 #include <cstring>
 #include <cstdlib>
+#include <exception>
 #include <limits>
 
 #include "../perf_metrics.h"
@@ -630,6 +631,124 @@ extern "C" void load_replay(const uint8_t* data, size_t len) {
 // reflects pure simulation cost.
 // ---------------------------------------------------------------------------
 #ifndef EMSCRIPTEN
+struct replay_validation_report {
+	a_string map_name;
+	int end_frame = 0;
+	bool is_broodwar = false;
+	size_t action_bytes = 0;
+	size_t action_frame_chunks = 0;
+	int first_action_frame = -1;
+	int last_action_frame = -1;
+	int stepped_frames = 0;
+};
+
+static replay_validation_report validate_replay_or_throw(const char* replay_file) {
+	using namespace bwgame;
+
+	auto load_data_file = data_loading::data_files_directory("");
+
+	// replay_player owns its own global/game/sim state.
+	replay_player player;
+	player.init(load_data_file);
+	player.load_replay_file(replay_file);
+
+	replay_validation_report report;
+	report.map_name = player.replay_st.map_name;
+	report.end_frame = player.replay_st.end_frame;
+	report.is_broodwar = player.replay_st.is_broodwar;
+	report.action_bytes = player.replay_st.actions_data_buffer.size();
+
+	if (report.end_frame < 0) {
+		error("validate_replay: invalid end frame %d", report.end_frame);
+	}
+
+	// Pass 1: verify action frame block structure and bounds without mutating
+	// replay playback state.
+	const auto& action_buffer = player.replay_st.actions_data_buffer;
+	static const uint8_t empty_action_buffer_byte = 0;
+	const uint8_t* action_begin = action_buffer.empty() ? &empty_action_buffer_byte : action_buffer.data();
+	const uint8_t* action_end = action_begin + action_buffer.size();
+	data_loading::data_reader_le frame_reader(action_begin, action_end);
+	int prev_frame = -1;
+	while (frame_reader.left() != 0) {
+		int frame = frame_reader.get<int32_t>();
+		size_t actions_size = frame_reader.get<uint8_t>();
+		frame_reader.get_n(actions_size);
+
+		if (frame < 0) {
+			error("validate_replay: found negative action frame %d", frame);
+		}
+		if (frame < prev_frame) {
+			error("validate_replay: non-monotonic action frame chunk %d after %d", frame, prev_frame);
+		}
+		if (frame >= report.end_frame) {
+			error("validate_replay: action frame %d is outside replay end frame %d", frame, report.end_frame);
+		}
+
+		if (report.first_action_frame == -1) report.first_action_frame = frame;
+		report.last_action_frame = frame;
+		++report.action_frame_chunks;
+		prev_frame = frame;
+	}
+
+	// Pass 2: run normal replay stepping to force action decoding/dispatch.
+	while (!player.is_done()) {
+		player.next_frame();
+		++report.stepped_frames;
+	}
+
+	if (player.action_st.actions_data_position != action_buffer.size()) {
+		error("validate_replay: consumed %lld/%lld action bytes during playback",
+			(long long)player.action_st.actions_data_position,
+			(long long)action_buffer.size());
+	}
+	if (player.st().current_frame != report.end_frame) {
+		error("validate_replay: playback stopped at frame %d, expected %d",
+			player.st().current_frame,
+			report.end_frame);
+	}
+
+	return report;
+}
+
+static int run_validate_replay(const char* replay_file) {
+	using namespace bwgame;
+
+	const char* rep = replay_file ? replay_file : "maps/p49.rep";
+	log("validate: checking replay '%s'\n", rep);
+
+	try {
+		auto report = validate_replay_or_throw(rep);
+		const char* map_name = report.map_name.empty() ? "<unknown>" : report.map_name.c_str();
+		log("validate: PASS\n"
+			"  map              : %s\n"
+			"  broodwar         : %s\n"
+			"  end frame        : %d\n"
+			"  action bytes     : %lld\n"
+			"  action chunks    : %lld\n"
+			"  first/last chunk : %d / %d\n"
+			"  stepped frames   : %d\n",
+			map_name,
+			report.is_broodwar ? "yes" : "no",
+			report.end_frame,
+			(long long)report.action_bytes,
+			(long long)report.action_frame_chunks,
+			report.first_action_frame,
+			report.last_action_frame,
+			report.stepped_frames);
+		return 0;
+	} catch (const exception& e) {
+		log("validate: FAIL (%s)\n", e.what());
+		return 1;
+	} catch (const std::exception& e) {
+		log("validate: FAIL (%s)\n", e.what());
+		return 1;
+	} catch (...) {
+		log("validate: FAIL (unknown exception)\n");
+		return 1;
+	}
+}
+
 static int run_bench(int bench_frames, const char* replay_file) {
 	using namespace bwgame;
 
@@ -686,11 +805,14 @@ int main(int argc, char** argv) {
 	// Argument parsing
 	const char* replay_file = nullptr;
 	int bench_frames = 0;
+	bool validate_replay = false;
 	bool headless = false;
 
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "--bench") == 0 && i + 1 < argc) {
 			bench_frames = atoi(argv[++i]);
+		} else if (strcmp(argv[i], "--validate-replay") == 0) {
+			validate_replay = true;
 		} else if (strcmp(argv[i], "--headless") == 0) {
 			headless = true;
 		} else if (strcmp(argv[i], "--replay") == 0 && i + 1 < argc) {
@@ -700,6 +822,13 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	if (bench_frames > 0 && validate_replay) {
+		log("error: --bench and --validate-replay cannot be used together\n");
+		return 2;
+	}
+	if (validate_replay) {
+		return run_validate_replay(replay_file);
+	}
 	if (bench_frames > 0) {
 		return run_bench(bench_frames, replay_file);
 	}

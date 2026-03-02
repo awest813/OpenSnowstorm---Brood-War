@@ -40,6 +40,7 @@ OpenSnowstorm has the same ambition for **StarCraft: Brood War**:
 | Multiplayer sync layer | Functional (latency-buffered) |
 | SDL2 UI (replay viewer) | Functional |
 | Headless / benchmark mode | Added (see `--bench`, `--headless`) |
+| Replay validation sanity check | Added (see `--validate-replay`) |
 | Automated determinism test suite | Planned (Phase 0) |
 | Full game client (lobby, matchmaking) | Long-term roadmap |
 
@@ -68,6 +69,7 @@ OpenSnowstorm has the same ambition for **StarCraft: Brood War**:
   - `ui/`: SDL2 backend, rendering, input glue (optional)
   - Supports `--bench <frames>` for headless simulation benchmarking
   - Supports `--headless` for simulation without rendering
+  - Supports `--validate-replay` for replay header/frame-stream validation
   - Supports `--replay <file>` to specify the replay to load
 - **BWAPI shim**
   - `mini-openbwapi/`: lightweight BWAPI-compatible wrapper for engine embedding
@@ -112,6 +114,17 @@ cmake --build build/ui -j
 # Run 5000 simulation frames as fast as possible; reports fps/latency stats
 ./gfxtest --bench 5000 --replay maps/myrep.rep
 ```
+
+### Replay validation sanity check
+
+```bash
+# Validate replay container/header + action frame-stream consistency
+./gfxtest --validate-replay --replay maps/myrep.rep
+```
+
+Expected result:
+- `validate: PASS` with replay summary details on success (exit code `0`)
+- `validate: FAIL (...)` on malformed/incompatible replay data (non-zero exit code)
 
 ### Headless simulation (SDL window hidden, simulation only)
 
