@@ -556,6 +556,11 @@ struct ui_functions: ui_util_functions {
 	native_window::window wnd;
 	bool create_window = true;
 	bool draw_ui_elements = true;
+	bool is_replay_mode = true;
+	bool is_live_game_mode = false;
+	bool enforce_local_visibility = false;
+	int local_player_id = -1;
+	int enemy_player_id = -1;
 
 	bool exit_on_close = true;
 	bool window_closed = false;
@@ -773,6 +778,7 @@ struct ui_functions: ui_util_functions {
 	void draw_tiles(uint8_t* data, size_t data_pitch) {
 
 		auto screen_tile = screen_tile_bounds();
+		uint8_t visibility_mask = local_visibility_mask();
 
 		size_t tile_index = screen_tile.from.y * game_st.map_tile_width + screen_tile.from.x;
 		auto* megatile_index = &st.tiles_mega_tile_index[tile_index];
@@ -851,6 +857,15 @@ struct ui_functions: ui_util_functions {
 								draw_frame(frame, false, dst, data_pitch, offset_x, offset_y, width, height);
 							}
 						}
+					}
+				}
+
+				if (enforce_local_visibility && has_local_player()) {
+					rect tile_area{{screen_x, screen_y}, {screen_x + 32, screen_y + 32}};
+					if ((tile->explored & visibility_mask) == 0) {
+						fill_rectangle(data, data_pitch, tile_area, 0);
+					} else if ((tile->visible & visibility_mask) == 0) {
+						darken_rectangle(data, data_pitch, tile_area);
 					}
 				}
 
@@ -1235,6 +1250,9 @@ struct ui_functions: ui_util_functions {
 		for (size_t y = from_y; y != to_y; ++y) {
 			for (auto* sprite : ptr(st.sprites_on_tile_line.at(y))) {
 				if (s_hidden(sprite)) continue;
+				if (enforce_local_visibility && has_local_player()) {
+					if ((sprite->visibility_flags & (1 << local_player_id)) == 0) continue;
+				}
 				sorted_sprites.emplace_back(sprite_depth_order(sprite), sprite);
 			}
 		}
@@ -1275,6 +1293,24 @@ struct ui_functions: ui_util_functions {
 		}
 	}
 
+	void darken_rectangle(uint8_t* data, size_t data_pitch, rect area) {
+		if (area.from.x < 0) area.from.x = 0;
+		if (area.from.y < 0) area.from.y = 0;
+		if (area.to.x > (int)screen_width) area.to.x = screen_width;
+		if (area.to.y > (int)screen_height) area.to.y = screen_height;
+		if (area.from.x >= area.to.x || area.from.y >= area.to.y) return;
+
+		uint8_t* dark_row = &tileset_img.dark_pcx.data[256 * 18];
+		size_t width = (size_t)(area.to.x - area.from.x);
+		uint8_t* ptr = data + data_pitch * (size_t)area.from.y + (size_t)area.from.x;
+		for (int y = area.from.y; y < area.to.y; ++y) {
+			for (size_t x = 0; x < width; ++x) {
+				ptr[x] = dark_row[ptr[x]];
+			}
+			ptr += data_pitch;
+		}
+	}
+
 	void line_rectangle(uint8_t* data, size_t data_pitch, rect area, uint8_t index) {
 		if (area.from.x < 0) area.from.x = 0;
 		if (area.from.y < 0) area.from.y = 0;
@@ -1312,7 +1348,10 @@ struct ui_functions: ui_util_functions {
 	}
 
 	bool unit_visble_on_minimap(unit_t* u) {
-		if (u->owner < 8 && u->sprite->visibility_flags == 0) return false;
+		if (u->owner < 8) {
+			uint8_t mask = local_visibility_mask();
+			if ((u->sprite->visibility_flags & mask) == 0) return false;
+		}
 		if (ut_turret(u)) return false;
 		if (unit_is_trap(u)) return false;
 		if (unit_is(u, UnitTypes::Spell_Dark_Swarm)) return false;
@@ -1347,18 +1386,29 @@ struct ui_functions: ui_util_functions {
 		line_rectangle(data, data_pitch, {area.from - xy(1, 1), area.to + xy(1, 1)}, 0);
 
 		uint8_t* p = data + data_pitch * (size_t)area.from.y + (size_t)area.from.x;
+		bool apply_local_visibility = enforce_local_visibility && has_local_player();
+		uint8_t visibility_mask = local_visibility_mask();
 
 		size_t pitch = data_pitch - game_st.map_tile_width;
 		for (size_t y = 0; y != game_st.map_tile_height; ++y) {
 			for (size_t x = 0; x != game_st.map_tile_width; ++x) {
+				const tile_t& t = st.tiles[y * game_st.map_tile_width + x];
+				if (apply_local_visibility && (t.explored & visibility_mask) == 0) {
+					*p++ = 0;
+					continue;
+				}
 				size_t index;
-				if (~st.tiles[y * game_st.map_tile_width + x].flags & tile_t::flag_has_creep) index = st.tiles_mega_tile_index[y * game_st.map_tile_width + x];
+				if (~t.flags & tile_t::flag_has_creep) index = st.tiles_mega_tile_index[y * game_st.map_tile_width + x];
 				else index = game_st.cv5.at(1).mega_tile_index[creep_random_tile_indices[y * game_st.map_tile_width + x]];
 				auto* images = &tileset_img.vx4.at(index).images[0];
 				auto* bitmap = &tileset_img.vr4.at(*images / 2).bitmap[0];
 				auto val = bitmap[55 / sizeof(vr4_entry::bitmap_t)];
 				size_t shift = 8 * (55 % sizeof(vr4_entry::bitmap_t));
 				val >>= shift;
+				if (apply_local_visibility && (t.visible & visibility_mask) == 0) {
+					uint8_t* dark_row = &tileset_img.dark_pcx.data[256 * 18];
+					val = dark_row[val];
+				}
 				*p++ = (uint8_t)val;
 			}
 			p += pitch;
@@ -1400,6 +1450,7 @@ struct ui_functions: ui_util_functions {
 #ifdef EMSCRIPTEN
 		return {};
 #endif
+		if (!is_replay_mode) return {};
 		rect r;
 		int width = 192;
 		int height = 32;
@@ -1666,6 +1717,8 @@ struct ui_functions: ui_util_functions {
 	}
 
 	void current_selection_add(unit_t* u) {
+		if (!u) return;
+		if (!unit_is_local_controllable(u)) return;
 		auto uid = get_unit_id(u);
 		if (std::find(current_selection.begin(), current_selection.end(), uid) != current_selection.end()) return;
 		current_selection.push_back(uid);
@@ -1679,6 +1732,72 @@ struct ui_functions: ui_util_functions {
 		auto uid = get_unit_id(u);
 		auto i = std::find(current_selection.begin(), current_selection.end(), uid);
 		if (i != current_selection.end()) current_selection.erase(i);
+	}
+
+	enum class pending_order_mode_t {
+		none,
+		attack_move,
+		patrol
+	};
+
+	pending_order_mode_t pending_order_mode = pending_order_mode_t::none;
+
+	bool has_local_player() const {
+		return local_player_id >= 0 && local_player_id < 8;
+	}
+
+	uint8_t local_visibility_mask() const {
+		if (enforce_local_visibility && has_local_player()) return (uint8_t)(1u << local_player_id);
+		return 0xff;
+	}
+
+	bool unit_is_local_controllable(const unit_t* u) const {
+		if (!u) return false;
+		if (!is_live_game_mode || !has_local_player()) return true;
+		return u->owner == local_player_id;
+	}
+
+	xy screen_to_map_pos(int mouse_x, int mouse_y) const {
+		return screen_pos + xy((fp16::integer(mouse_x) / view_scale).integer_part(), (fp16::integer(mouse_y) / view_scale).integer_part());
+	}
+
+	void sync_action_selection_from_current() {
+		if (!has_local_player()) return;
+		auto& selection = action_st.selection.at(local_player_id);
+		selection.clear();
+		for (auto uid : current_selection) {
+			unit_t* u = get_unit(uid);
+			if (!u || unit_dead(u) || us_hidden(u)) continue;
+			if (!unit_is_local_controllable(u)) continue;
+			if (selection.size() == 12) break;
+			selection.push_back(u);
+		}
+	}
+
+	void sync_current_selection_from_action() {
+		if (!has_local_player()) return;
+		current_selection_clear();
+		for (unit_t* u : selected_units(local_player_id)) {
+			if (!u || unit_dead(u) || us_hidden(u)) continue;
+			current_selection_add(u);
+		}
+	}
+
+	bool issue_local_targeted_order(xy map_pos, unit_t* target, bool queue) {
+		if (!is_live_game_mode || !has_local_player()) return false;
+		sync_action_selection_from_current();
+		if (action_st.selection.at(local_player_id).empty()) return false;
+
+		bool ok = false;
+		if (pending_order_mode == pending_order_mode_t::attack_move) {
+			ok = action_order(local_player_id, get_order_type(Orders::AttackMove), map_pos, target, nullptr, queue);
+		} else if (pending_order_mode == pending_order_mode_t::patrol) {
+			ok = action_patrol(local_player_id, map_pos, queue);
+		} else {
+			ok = action_default_order(local_player_id, map_pos, target, nullptr, queue);
+		}
+		pending_order_mode = pending_order_mode_t::none;
+		return ok;
 	}
 
 	bool is_moving_minimap = false;
@@ -1738,12 +1857,21 @@ struct ui_functions: ui_util_functions {
 		};
 
 		auto check_move_replay_slider = [&](auto& e) {
+			if (!is_replay_mode) return;
 			if (e.mouse_x >= replay_slider_area.from.x && e.mouse_x < replay_slider_area.to.x) {
 				if (e.mouse_y >= replay_slider_area.from.y && e.mouse_y < replay_slider_area.to.y) {
 					is_moving_replay_slider = true;
 					move_replay_slider(e.mouse_x, e.mouse_y);
 				}
 			}
+		};
+
+		auto issue_order_at_cursor = [&](int mouse_x, int mouse_y) {
+			if (!is_live_game_mode || !has_local_player()) return;
+			xy map_pos = screen_to_map_pos(mouse_x, mouse_y);
+			unit_t* target = select_get_unit_at(map_pos);
+			bool queue = wnd.get_key_state(225) || wnd.get_key_state(229);
+			issue_local_targeted_order(map_pos, target, queue);
 		};
 
 		auto end_drag_select = [&](bool double_clicked) {
@@ -1753,6 +1881,10 @@ struct ui_functions: ui_util_functions {
 			if (drag_select_to_x - drag_select_from_x <= 4 || drag_select_to_y - drag_select_from_y <= 4) {
 				unit_t* u = select_get_unit_at(screen_pos + xy(drag_select_from_x, drag_select_from_y));
 				if (u) {
+					if (!unit_is_local_controllable(u)) {
+						is_drag_selecting = false;
+						return;
+					}
 					bool ctrl = wnd.get_key_state(224) || wnd.get_key_state(228);
 					if (double_clicked || ctrl) {
 						if (!shift) current_selection_clear();
@@ -1788,6 +1920,7 @@ struct ui_functions: ui_util_functions {
 				bool any_non_neutrals = false;
 				for (unit_t* u : find_units(translate_rect(r, screen_pos))) {
 					if (!unit_can_be_selected(u)) continue;
+					if (!unit_is_local_controllable(u)) continue;
 					new_units.push_back(u);
 					if (u->owner != 11) any_non_neutrals = true;
 				}
@@ -1822,6 +1955,13 @@ struct ui_functions: ui_util_functions {
 							drag_select_to_y = e.mouse_y;
 						}
 					} else if (e.button == 3) {
+						if (is_live_game_mode) {
+							issue_order_at_cursor(e.mouse_x, e.mouse_y);
+							break;
+						}
+						is_dragging_screen = true;
+						drag_screen_pos = screen_pos + xy((fp16::integer(e.mouse_x) / view_scale).integer_part(), (fp16::integer(e.mouse_y) / view_scale).integer_part());
+					} else if (e.button == 2) {
 						is_dragging_screen = true;
 						drag_screen_pos = screen_pos + xy((fp16::integer(e.mouse_x) / view_scale).integer_part(), (fp16::integer(e.mouse_y) / view_scale).integer_part());
 					}
@@ -1834,7 +1974,7 @@ struct ui_functions: ui_util_functions {
 							drag_select_to_x = e.mouse_x;
 							drag_select_to_y = e.mouse_y;
 						}
-					} else if (e.button_state & 4) {
+					} else if (e.button_state & 4 || e.button_state & 2) {
 						if (is_dragging_screen) {
 							screen_pos = drag_screen_pos - xy((fp16::integer(e.mouse_x) / view_scale).integer_part(), (fp16::integer(e.mouse_y) / view_scale).integer_part());
 							//screen_pos -= xy((fp16::integer(e.mouse_x - drag_screen_x) / view_scale).integer_part(), (fp16::integer(e.mouse_y - drag_screen_y) / view_scale).integer_part());
@@ -1852,6 +1992,8 @@ struct ui_functions: ui_util_functions {
 						}
 					} else if (e.button == 3) {
 						is_dragging_screen = false;
+					} else if (e.button == 2) {
+						is_dragging_screen = false;
 					}
 					break;
 				case native_window::event_t::type_key_down:
@@ -1862,16 +2004,40 @@ struct ui_functions: ui_util_functions {
 					if (e.sym == ' ' || e.sym == 'p') {
 						is_paused = !is_paused;
 					}
-					if (e.sym == 'a' || e.sym == 'u') {
+					if (!is_live_game_mode && (e.sym == 'a' || e.sym == 'u')) {
 						if (game_speed < fp8::integer(128)) game_speed *= 2;
 					}
 					if (e.sym == 'z' || e.sym == 'd') {
 						if (game_speed > 2_fp8) game_speed /= 2;
 					}
-					if (e.sym == '\b') {
+					if (is_replay_mode && e.sym == '\b') {
 						int t = 5 * 42 / 1000;
 						if (replay_frame < t) replay_frame = 0;
 						else replay_frame -= t;
+					}
+					if (is_live_game_mode && has_local_player()) {
+						bool ctrl = wnd.get_key_state(224) || wnd.get_key_state(228);
+						bool shift = wnd.get_key_state(225) || wnd.get_key_state(229);
+
+						if (e.sym == 'u') {
+							if (game_speed < fp8::integer(128)) game_speed *= 2;
+						} else if (e.sym == 's') {
+							sync_action_selection_from_current();
+							action_stop(local_player_id, shift);
+						} else if (e.sym == 'h') {
+							sync_action_selection_from_current();
+							action_hold_position(local_player_id, shift);
+						} else if (e.sym == 'a') {
+							pending_order_mode = pending_order_mode_t::attack_move;
+						} else if (e.sym == 't') {
+							pending_order_mode = pending_order_mode_t::patrol;
+						} else if (e.sym >= '0' && e.sym <= '9') {
+							size_t group_n = e.sym == '0' ? 9 : (size_t)(e.sym - '1');
+							int subaction = ctrl ? 0 : (shift ? 2 : 1);
+							sync_action_selection_from_current();
+							bool changed = action_control_group(local_player_id, group_n, subaction);
+							if (subaction == 1 && changed) sync_current_selection_from_action();
+						}
 					}
 #endif
 					break;

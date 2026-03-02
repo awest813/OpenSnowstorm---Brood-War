@@ -74,12 +74,14 @@ struct main_t {
 	int fps_counter = 0;
 
 	perf::frame_timer sim_timer;
+	bool live_result_reported = false;
 
 	a_map<int, std::unique_ptr<saved_state>> saved_states;
 
 	void reset() {
 		saved_states.clear();
 		ui.reset();
+		live_result_reported = false;
 	}
 
 	void update() {
@@ -99,72 +101,106 @@ struct main_t {
 		}
 
 		auto next = [&]() {
-			int save_interval = 10 * 1000 / 42;
-			if (ui.st.current_frame == 0 || ui.st.current_frame % save_interval == 0) {
-				auto i = saved_states.find(ui.st.current_frame);
-				if (i == saved_states.end()) {
-					auto v = std::make_unique<saved_state>();
-					v->st = copy_state(ui.st);
-					v->action_st = copy_state(ui.action_st, ui.st, v->st);
-					v->apm = ui.apm;
+			if (ui.is_replay_mode) {
+				int save_interval = 10 * 1000 / 42;
+				if (ui.st.current_frame == 0 || ui.st.current_frame % save_interval == 0) {
+					auto i = saved_states.find(ui.st.current_frame);
+					if (i == saved_states.end()) {
+						auto v = std::make_unique<saved_state>();
+						v->st = copy_state(ui.st);
+						v->action_st = copy_state(ui.action_st, ui.st, v->st);
+						v->apm = ui.apm;
 
-					a_map<int, std::unique_ptr<saved_state>> new_saved_states;
-					new_saved_states[ui.st.current_frame] = std::move(v);
-					while (!saved_states.empty()) {
-						auto i = saved_states.begin();
-						auto v = std::move(*i);
-						saved_states.erase(i);
-						new_saved_states[v.first] = std::move(v.second);
+						a_map<int, std::unique_ptr<saved_state>> new_saved_states;
+						new_saved_states[ui.st.current_frame] = std::move(v);
+						while (!saved_states.empty()) {
+							auto i = saved_states.begin();
+							auto v = std::move(*i);
+							saved_states.erase(i);
+							new_saved_states[v.first] = std::move(v.second);
+						}
+						std::swap(saved_states, new_saved_states);
 					}
-					std::swap(saved_states, new_saved_states);
 				}
+				ui.replay_functions::next_frame();
+			} else {
+				ui.state_functions::next_frame();
 			}
-			ui.replay_functions::next_frame();
 			sim_timer.tick();
 			for (auto& v : ui.apm) v.update(ui.st.current_frame);
 		};
 
-		if (!ui.is_done() || ui.st.current_frame != ui.replay_frame) {
-			if (ui.st.current_frame != ui.replay_frame) {
+		if (ui.is_replay_mode) {
+			if (!ui.is_done() || ui.st.current_frame != ui.replay_frame) {
 				if (ui.st.current_frame != ui.replay_frame) {
-					auto i = saved_states.lower_bound(ui.replay_frame);
-					if (i != saved_states.begin()) --i;
-					auto& v = i->second;
-					if (ui.st.current_frame > ui.replay_frame || v->st.current_frame > ui.st.current_frame) {
-						ui.st = copy_state(v->st);
-						ui.action_st = copy_state(v->action_st, v->st, ui.st);
-						ui.apm = v->apm;
-					}
-				}
-				if (ui.st.current_frame < ui.replay_frame) {
-					for (size_t i = 0; i != 32 && ui.st.current_frame != ui.replay_frame; ++i) {
-						for (size_t i2 = 0; i2 != 4 && ui.st.current_frame != ui.replay_frame; ++i2) {
-							next();
+					if (ui.st.current_frame != ui.replay_frame) {
+						auto i = saved_states.lower_bound(ui.replay_frame);
+						if (i != saved_states.begin()) --i;
+						auto& v = i->second;
+						if (ui.st.current_frame > ui.replay_frame || v->st.current_frame > ui.st.current_frame) {
+							ui.st = copy_state(v->st);
+							ui.action_st = copy_state(v->action_st, v->st, ui.st);
+							ui.apm = v->apm;
 						}
-						if (clock.now() - now >= std::chrono::milliseconds(50)) break;
 					}
-				}
-				last_tick = now;
-			} else {
-				if (ui.is_paused) {
+					if (ui.st.current_frame < ui.replay_frame) {
+						for (size_t i = 0; i != 32 && ui.st.current_frame != ui.replay_frame; ++i) {
+							for (size_t i2 = 0; i2 != 4 && ui.st.current_frame != ui.replay_frame; ++i2) {
+								next();
+							}
+							if (clock.now() - now >= std::chrono::milliseconds(50)) break;
+						}
+					}
 					last_tick = now;
 				} else {
-					auto tick_t = now - last_tick;
-					if (tick_t >= tick_speed * 16) {
-						last_tick = now - tick_speed * 16;
-						tick_t = tick_speed * 16;
-					}
-					auto tick_n = tick_speed.count() == 0 ? 128 : tick_t / tick_speed;
-					for (auto i = tick_n; i;) {
-						--i;
-						++fps_counter;
-						last_tick += tick_speed;
+					if (ui.is_paused) {
+						last_tick = now;
+					} else {
+						auto tick_t = now - last_tick;
+						if (tick_t >= tick_speed * 16) {
+							last_tick = now - tick_speed * 16;
+							tick_t = tick_speed * 16;
+						}
+						auto tick_n = tick_speed.count() == 0 ? 128 : tick_t / tick_speed;
+						for (auto i = tick_n; i;) {
+							--i;
+							++fps_counter;
+							last_tick += tick_speed;
 
-						if (!ui.is_done()) next();
-						else break;
-						if (i % 4 == 3 && clock.now() - now >= std::chrono::milliseconds(50)) break;
+							if (!ui.is_done()) next();
+							else break;
+							if (i % 4 == 3 && clock.now() - now >= std::chrono::milliseconds(50)) break;
+						}
+						ui.replay_frame = ui.st.current_frame;
 					}
-					ui.replay_frame = ui.st.current_frame;
+				}
+			}
+		} else {
+			if (ui.is_paused) {
+				last_tick = now;
+			} else {
+				auto tick_t = now - last_tick;
+				if (tick_t >= tick_speed * 16) {
+					last_tick = now - tick_speed * 16;
+					tick_t = tick_speed * 16;
+				}
+				auto tick_n = tick_speed.count() == 0 ? 128 : tick_t / tick_speed;
+				for (auto i = tick_n; i;) {
+					--i;
+					++fps_counter;
+					last_tick += tick_speed;
+					next();
+					if (i % 4 == 3 && clock.now() - now >= std::chrono::milliseconds(50)) break;
+				}
+				ui.replay_frame = ui.st.current_frame;
+			}
+			if (!live_result_reported && ui.has_local_player()) {
+				if (ui.player_won(ui.local_player_id)) {
+					live_result_reported = true;
+					log("single-player: victory at frame %d\n", ui.st.current_frame);
+				} else if (ui.player_defeated(ui.local_player_id)) {
+					live_result_reported = true;
+					log("single-player: defeat at frame %d\n", ui.st.current_frame);
 				}
 			}
 		}
@@ -1142,6 +1178,49 @@ static int run_bench(int bench_frames, const char* replay_file) {
 	    (long long)max_us);
 	return 0;
 }
+
+static void print_usage(const char* argv0) {
+	log(
+		"usage:\n"
+		"  %s [--replay <file.rep>] [--headless]\n"
+		"  %s --map <file.scx|file.scm> [--local-player <0-7>] [--enemy-player <0-7>]\n"
+		"     [--game-type <melee|ums>] [--local-race <zerg|terran|protoss|random>]\n"
+		"     [--enemy-race <zerg|terran|protoss|random>] [--headless]\n"
+		"  %s --bench <frames> [--replay <file.rep>]\n"
+		"  %s --validate-replay [--replay <file.rep>]\n"
+		"  %s --record-hashes <fixture.txt> [--hash-interval <n>] [--replay <file.rep>]\n"
+		"  %s --verify-hashes <fixture.txt> [--replay <file.rep>]\n"
+		"\n"
+		"single-player controls (map mode):\n"
+		"  left drag/select    right click issue order    middle drag camera\n"
+		"  s stop              h hold position            a attack-move (next right click)\n"
+		"  t patrol (next right click)\n"
+		"  ctrl+<1-0> set group   shift+<1-0> add group   <1-0> recall group\n"
+		"  space/p pause       u speed up                 z/d speed down\n",
+		argv0, argv0, argv0, argv0, argv0, argv0);
+}
+
+static int parse_slot_or_error(const char* value, const char* flag_name) {
+	errno = 0;
+	char* end = nullptr;
+	long v = std::strtol(value, &end, 10);
+	if (errno != 0 || end == value || *end != '\0' || v < 0 || v > 7) {
+		error("invalid %s value '%s' (expected integer 0-7)", flag_name, value);
+	}
+	return (int)v;
+}
+
+static int parse_race_or_error(const char* value, const char* flag_name) {
+	std::string v = value ? value : "";
+	for (char& c : v) c = (char)std::tolower((unsigned char)c);
+	if (v == "zerg") return 0;
+	if (v == "terran") return 1;
+	if (v == "protoss") return 2;
+	if (v == "random") return 5;
+	error("invalid %s value '%s' (expected zerg|terran|protoss|random)", flag_name, value ? value : "");
+	return 5;
+}
+
 #endif
 
 int main(int argc, char** argv) {
@@ -1153,16 +1232,88 @@ int main(int argc, char** argv) {
 #ifndef EMSCRIPTEN
 	// Argument parsing
 	const char* replay_file = nullptr;
+	const char* map_file = nullptr;
 	int bench_frames = 0;
 	const char* verify_hashes_file = nullptr;
 	const char* record_hashes_file = nullptr;
 	int hash_interval = 240;
 	bool validate_replay = false;
 	bool headless = false;
+	bool show_help = false;
+	bool game_type_melee = true;
+	int local_player_slot = -1;
+	int enemy_player_slot = -1;
+	int local_race = 5;
+	int enemy_race = 5;
 
 	for (int i = 1; i < argc; ++i) {
-		if (strcmp(argv[i], "--bench") == 0 && i + 1 < argc) {
+		if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+			show_help = true;
+		} else if (strcmp(argv[i], "--bench") == 0 && i + 1 < argc) {
 			bench_frames = atoi(argv[++i]);
+		} else if (strcmp(argv[i], "--map") == 0) {
+			if (i + 1 >= argc) {
+				log("error: --map requires a map file path\n");
+				return 2;
+			}
+			map_file = argv[++i];
+		} else if (strcmp(argv[i], "--local-player") == 0) {
+			if (i + 1 >= argc) {
+				log("error: --local-player requires a slot index (0-7)\n");
+				return 2;
+			}
+			try {
+				local_player_slot = parse_slot_or_error(argv[++i], "--local-player");
+			} catch (const exception& e) {
+				log("error: %s\n", e.what());
+				return 2;
+			}
+		} else if (strcmp(argv[i], "--enemy-player") == 0) {
+			if (i + 1 >= argc) {
+				log("error: --enemy-player requires a slot index (0-7)\n");
+				return 2;
+			}
+			try {
+				enemy_player_slot = parse_slot_or_error(argv[++i], "--enemy-player");
+			} catch (const exception& e) {
+				log("error: %s\n", e.what());
+				return 2;
+			}
+		} else if (strcmp(argv[i], "--game-type") == 0) {
+			if (i + 1 >= argc) {
+				log("error: --game-type requires value melee|ums\n");
+				return 2;
+			}
+			std::string v = argv[++i];
+			for (char& c : v) c = (char)std::tolower((unsigned char)c);
+			if (v == "melee") game_type_melee = true;
+			else if (v == "ums" || v == "use_map_settings") game_type_melee = false;
+			else {
+				log("error: invalid --game-type value '%s' (expected melee|ums)\n", argv[i]);
+				return 2;
+			}
+		} else if (strcmp(argv[i], "--local-race") == 0) {
+			if (i + 1 >= argc) {
+				log("error: --local-race requires value zerg|terran|protoss|random\n");
+				return 2;
+			}
+			try {
+				local_race = parse_race_or_error(argv[++i], "--local-race");
+			} catch (const exception& e) {
+				log("error: %s\n", e.what());
+				return 2;
+			}
+		} else if (strcmp(argv[i], "--enemy-race") == 0) {
+			if (i + 1 >= argc) {
+				log("error: --enemy-race requires value zerg|terran|protoss|random\n");
+				return 2;
+			}
+			try {
+				enemy_race = parse_race_or_error(argv[++i], "--enemy-race");
+			} catch (const exception& e) {
+				log("error: %s\n", e.what());
+				return 2;
+			}
 		} else if (strcmp(argv[i], "--validate-replay") == 0) {
 			validate_replay = true;
 		} else if (strcmp(argv[i], "--verify-hashes") == 0) {
@@ -1194,9 +1345,17 @@ int main(int argc, char** argv) {
 			headless = true;
 		} else if (strcmp(argv[i], "--replay") == 0 && i + 1 < argc) {
 			replay_file = argv[++i];
+		} else if (argv[i][0] == '-') {
+			log("error: unknown option '%s'\n", argv[i]);
+			return 2;
 		} else if (argv[i][0] != '-') {
 			replay_file = argv[i];
 		}
+	}
+
+	if (show_help) {
+		print_usage(argv[0]);
+		return 0;
 	}
 
 	if (bench_frames > 0 && validate_replay) {
@@ -1221,6 +1380,34 @@ int main(int argc, char** argv) {
 	}
 	if (verify_hashes_file && record_hashes_file) {
 		log("error: --verify-hashes and --record-hashes cannot be used together\n");
+		return 2;
+	}
+	if (map_file && replay_file) {
+		log("error: --map cannot be used with --replay/positional replay file\n");
+		return 2;
+	}
+	if (map_file && bench_frames > 0) {
+		log("error: --map and --bench cannot be used together\n");
+		return 2;
+	}
+	if (map_file && validate_replay) {
+		log("error: --map and --validate-replay cannot be used together\n");
+		return 2;
+	}
+	if (map_file && verify_hashes_file) {
+		log("error: --map and --verify-hashes cannot be used together\n");
+		return 2;
+	}
+	if (map_file && record_hashes_file) {
+		log("error: --map and --record-hashes cannot be used together\n");
+		return 2;
+	}
+	if ((local_player_slot != -1 || enemy_player_slot != -1 || local_race != 5 || enemy_race != 5 || !game_type_melee) && !map_file) {
+		log("error: --map is required when using single-player map options\n");
+		return 2;
+	}
+	if (local_player_slot != -1 && enemy_player_slot != -1 && local_player_slot == enemy_player_slot) {
+		log("error: --local-player and --enemy-player must be different slots\n");
 		return 2;
 	}
 	if (record_hashes_file) {
@@ -1267,7 +1454,98 @@ int main(int argc, char** argv) {
 	ui.init();
 
 #ifndef EMSCRIPTEN
-	ui.load_replay_file(replay_file ? replay_file : "maps/p49.rep");
+	if (map_file) {
+		ui.is_replay_mode = false;
+		ui.is_live_game_mode = true;
+		ui.enforce_local_visibility = true;
+
+		int selected_local = -1;
+		int selected_enemy = -1;
+
+		game_load_functions load_funcs(ui.st);
+		load_funcs.load_map_file(map_file, [&]() {
+			static_vector<size_t, 12> available_slots;
+			for (auto& v : ui.st.players) {
+				if (v.controller == player_t::controller_open || v.controller == player_t::controller_computer) {
+					size_t idx = (size_t)(&v - ui.st.players.data());
+					if (idx < 8) available_slots.push_back(idx);
+					v.controller = player_t::controller_closed;
+				}
+			}
+			if (available_slots.size() < 2) {
+				error("%s: not enough open/computer slots for single-player (need 2)", map_file);
+			}
+
+			auto contains_slot = [&](int slot) {
+				for (size_t v : available_slots) {
+					if ((int)v == slot) return true;
+				}
+				return false;
+			};
+
+			selected_local = local_player_slot;
+			if (selected_local == -1) selected_local = (int)available_slots.front();
+			if (!contains_slot(selected_local)) {
+				error("%s: requested local slot %d is not an open/computer slot", map_file, selected_local);
+			}
+
+			selected_enemy = enemy_player_slot;
+			if (selected_enemy == -1) {
+				for (size_t v : available_slots) {
+					if ((int)v != selected_local) {
+						selected_enemy = (int)v;
+						break;
+					}
+				}
+			}
+			if (selected_enemy == -1 || selected_enemy == selected_local || !contains_slot(selected_enemy)) {
+				error("%s: unable to pick a valid enemy slot (local=%d enemy=%d)", map_file, selected_local, selected_enemy);
+			}
+
+			auto& local_player = ui.st.players.at((size_t)selected_local);
+			auto& enemy_player = ui.st.players.at((size_t)selected_enemy);
+			local_player.controller = player_t::controller_occupied;
+			enemy_player.controller = player_t::controller_computer_game;
+
+			if ((int)local_player.race == 5) local_player.race = (race_t)local_race;
+			if ((int)enemy_player.race == 5) enemy_player.race = (race_t)enemy_race;
+
+			uint32_t race_seed = (uint32_t)std::chrono::high_resolution_clock::now().time_since_epoch().count();
+			auto roll_race = [&]() {
+				race_seed = race_seed * 22695477u + 1u;
+				return (int)((race_seed >> 16) % 3u);
+			};
+			for (auto& v : ui.st.players) {
+				if (v.controller == player_t::controller_occupied || v.controller == player_t::controller_computer_game) {
+					if ((int)v.race > 2) v.race = (race_t)roll_race();
+				}
+			}
+
+			if (game_type_melee) {
+				load_funcs.setup_info.victory_condition = 1;
+				load_funcs.setup_info.starting_units = 1;
+			}
+
+			ui.st.lcg_rand_state = race_seed;
+		});
+
+		ui.local_player_id = selected_local;
+		ui.enemy_player_id = selected_enemy;
+		ui.replay_frame = ui.st.current_frame;
+		log("single-player: map='%s' local_slot=%d enemy_slot=%d mode=%s\n",
+			map_file,
+			selected_local,
+			selected_enemy,
+			game_type_melee ? "melee" : "ums");
+	} else {
+		ui.is_replay_mode = true;
+		ui.is_live_game_mode = false;
+		ui.enforce_local_visibility = false;
+		ui.local_player_id = -1;
+		ui.enemy_player_id = -1;
+		ui.load_replay_file(replay_file ? replay_file : "maps/p49.rep");
+		log("replay: file='%s'\n", replay_file ? replay_file : "maps/p49.rep");
+	}
 #endif
 
 	auto& wnd = ui.wnd;
@@ -1298,8 +1576,25 @@ int main(int argc, char** argv) {
 	if (headless) {
 		// Headless mode: run the simulation forward without rendering.
 		// Useful for profiling simulation throughput or bot testing.
-		while (!ui.is_done()) {
-			ui.replay_functions::next_frame();
+		if (ui.is_replay_mode) {
+			while (!ui.is_done()) {
+				ui.replay_functions::next_frame();
+			}
+		} else {
+			log("single-player headless: stepping until local victory/defeat\n");
+			while (true) {
+				ui.state_functions::next_frame();
+				if (ui.has_local_player()) {
+					if (ui.player_won(ui.local_player_id)) {
+						log("single-player headless: victory at frame %d\n", ui.st.current_frame);
+						break;
+					}
+					if (ui.player_defeated(ui.local_player_id)) {
+						log("single-player headless: defeat at frame %d\n", ui.st.current_frame);
+						break;
+					}
+				}
+			}
 		}
 	} else {
 		// Normal display loop with adaptive sleep: sleep only until the next

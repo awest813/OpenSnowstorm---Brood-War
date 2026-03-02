@@ -94,6 +94,11 @@ Concretely, "success" means:
 
 *Goal: a player can run Brood War end-to-end with OpenSnowstorm.*
 
+- **Single-player client foundation (landed)**
+  - `gfxtest --map <file.scx|file.scm>` can now run an interactive single-player map session.
+  - Local unit control path includes selection, default right-click orders, stop/hold, attack-move/patrol target modes, and control groups.
+  - Local-vision rendering path (fog/explored filtering for terrain, sprites, and minimap) is now wired for non-observer play.
+  - This is a foundation milestone, not full UX parity with Brood War's campaign/lobby frontend.
 - **Campaign engine**
   - Trigger system completeness (all StarEdit triggers)
   - Briefing room support
