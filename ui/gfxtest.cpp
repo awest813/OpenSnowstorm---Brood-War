@@ -7,6 +7,7 @@
 #include "common.h"
 #include "bwgame.h"
 #include "replay.h"
+#include "../replay_saver.h"
 
 #include <chrono>
 #include <thread>
@@ -1192,6 +1193,7 @@ static void print_usage(const char* argv0) {
 		"  %s --map <file.scx|file.scm> [--local-player <0-7>] [--enemy-player <0-7>]\n"
 		"     [--game-type <melee|ums>] [--local-race <zerg|terran|protoss|random>]\n"
 		"     [--enemy-race <zerg|terran|protoss|random>] [--fog|--no-fog] [--headless]\n"
+		"     [--headless-map [<frame-limit>]]  (headless smoke test; default limit 72000)\n"
 		"  %s --bench <frames> [--replay <file.rep>]\n"
 		"  %s --validate-replay [--replay <file.rep>]\n"
 		"  %s --record-hashes <fixture.txt> [--hash-interval <n>] [--replay <file.rep>]\n"
@@ -1210,9 +1212,21 @@ static void print_usage(const char* argv0) {
 		"  i stim pack (Marine/Firebat)   m merge archon/dark archon (High/Dark Templar)\n"
 		"  tab center camera on selection\n"
 		"  ctrl+<1-0> set group   shift+<1-0> add group   <1-0> recall group\n"
-		"  esc cancel armed building / landing placement\n"
+		"  esc cancel armed building / landing / spell targeting\n"
 		"  f toggle fog of war\n"
-		"  space/p pause       u speed up                 z/d speed down\n",
+		"  space/p pause       u speed up                 z/d speed down\n"
+		"\n"
+		"spell targeting (command panel or ability hotkey arms a targeting mode):\n"
+		"  right click on map/unit fires the spell; esc cancels\n"
+		"  Science Vessel: defensive matrix, irradiate, emp shockwave, scanner sweep\n"
+		"  Battlecruiser: yamato gun   Ghost: lockdown   Vulture: spider mines\n"
+		"  Medic: healing, restoration, optical flare\n"
+		"  Queen: spawn broodlings, parasite, ensnare, infestation\n"
+		"  Defiler: dark swarm, plague, consume\n"
+		"  High Templar: psionic storm, hallucination\n"
+		"  Arbiter: recall, stasis field\n"
+		"  Dark Archon: mind control, feedback, maelstrom\n"
+		"  Corsair: disruption web\n",
 		argv0, argv0, argv0, argv0, argv0, argv0);
 }
 
@@ -1235,6 +1249,191 @@ static int parse_race_or_error(const char* value, const char* flag_name) {
 	if (v == "random") return 5;
 	error("invalid %s value '%s' (expected zerg|terran|protoss|random)", flag_name, value ? value : "");
 	return 5;
+}
+
+// ---------------------------------------------------------------------------
+// gen-test-replay: generate a minimal deterministic replay from a map file.
+//
+// Steps N frames of a melee session (default: 240) and writes the result as a
+// BW-format replay to <output.rep>.  A companion hash fixture is written to
+// <output.hashes> when --record-hashes is also given.  Together these two
+// files constitute a self-contained regression fixture that CI can verify
+// without needing extra configuration.
+//
+// Usage:
+//   gfxtest --gen-test-replay <output.rep> --map <file.scx|scm>
+//              [--frames <n>] [--record-hashes <fixture.txt>]
+//              [--hash-interval <n>]
+// ---------------------------------------------------------------------------
+static int run_gen_test_replay(
+		const char* map_file,
+		const char* output_rep,
+		const char* output_hashes,
+		int frames,
+		int hash_interval) {
+	using namespace bwgame;
+
+	if (!map_file || map_file[0] == '\0') {
+		log("gen-test-replay: FAIL (--map is required)\n");
+		return 2;
+	}
+	if (!output_rep || output_rep[0] == '\0') {
+		log("gen-test-replay: FAIL (output replay path is required)\n");
+		return 2;
+	}
+	if (frames <= 0) frames = 240;
+
+	log("gen-test-replay: map='%s' output='%s' frames=%d\n", map_file, output_rep, frames);
+
+	try {
+		auto load_data_file = data_loading::data_files_directory("");
+
+		// Set up the game state and load the map.
+		game_player player(load_data_file);
+		state& st = player.st();
+
+		replay_saver_state saver_st;
+
+		game_load_functions load_funcs(st);
+
+		// Capture the raw map bytes during load so the saver can embed them.
+		std::vector<uint8_t> map_data_buf;
+
+		load_funcs.load_map_file(map_file, [&]() {
+			// Melee setup: slot 0 = player, slot 1 = computer.
+			for (size_t i = 0; i < 8; ++i) {
+				if (st.players[i].controller == player_t::controller_open ||
+				    st.players[i].controller == player_t::controller_computer) {
+					st.players[i].controller = player_t::controller_closed;
+				}
+			}
+			st.players[0].controller = player_t::controller_occupied;
+			st.players[0].race = race_t::terran;
+			st.players[1].controller = player_t::controller_computer_game;
+			st.players[1].race = race_t::zerg;
+
+			load_funcs.setup_info.victory_condition = 1;
+			load_funcs.setup_info.starting_units = 1;
+
+			saver_st.random_seed = 42;
+			st.lcg_rand_state = 42;
+		});
+
+		// Read the raw map bytes (needed by replay_saver_functions::save_replay).
+		{
+			std::ifstream mf(map_file, std::ios::binary);
+			if (!mf) {
+				error("gen-test-replay: unable to open map file '%s'", map_file);
+			}
+			mf.seekg(0, std::ios::end);
+			map_data_buf.resize(mf.tellg());
+			mf.seekg(0);
+			mf.read((char*)map_data_buf.data(), (std::streamsize)map_data_buf.size());
+		}
+		saver_st.map_data = map_data_buf.data();
+		saver_st.map_data_size = map_data_buf.size();
+
+		saver_st.map_tile_width  = st.game->map_tile_width;
+		saver_st.map_tile_height = st.game->map_tile_height;
+		saver_st.tileset         = (int)st.game->tileset_index;
+		saver_st.game_type       = 2; // melee
+		saver_st.game_speed      = 3;
+		saver_st.player_name     = "OpenSnowstorm";
+		saver_st.game_name       = "Test";
+		saver_st.map_name        = map_file;
+		saver_st.setup_info      = load_funcs.setup_info;
+		for (size_t i = 0; i < 12; ++i) {
+			saver_st.players[i]      = st.players[i];
+			saver_st.player_names[i] = "";
+		}
+
+		// Step the simulation.
+		state_functions sf(st);
+		std::vector<replay_hash_checkpoint> checkpoints;
+		if (output_hashes && output_hashes[0] != '\0') {
+			// Record frame-0 hash before stepping.
+			// Reuse compute_replay_checkpoint_hash via an action_state shim.
+			// Since we have no replay player, compute a simpler frame hash.
+			auto simple_hash = [&]() -> uint32_t {
+				uint32_t h = 2166136261u;
+				auto add = [&](auto v) { h ^= (uint32_t)v; h *= 16777619u; };
+				add(st.current_frame);
+				add(st.lcg_rand_state);
+				for (auto v : st.current_minerals) add(v);
+				for (auto v : st.current_gas) add(v);
+				add(st.active_orders_size);
+				for (const unit_t* u : ptr(st.visible_units)) {
+					add((u->shield_points + u->hp).raw_value);
+					add(u->exact_position.x.raw_value);
+					add(u->exact_position.y.raw_value);
+					add(u->owner);
+					add((int)u->order_type->id);
+				}
+				return h;
+			};
+			if (hash_interval <= 0) hash_interval = 240;
+			replay_hash_checkpoint cp0;
+			cp0.frame = 0;
+			cp0.hash  = simple_hash();
+			checkpoints.push_back(cp0);
+
+			for (int f = 0; f < frames; ++f) {
+				sf.next_frame();
+				int frame = (int)st.current_frame;
+				if (frame % hash_interval == 0 || f == frames - 1) {
+					replay_hash_checkpoint cp;
+					cp.frame = frame;
+					cp.hash  = simple_hash();
+					if (checkpoints.empty() || checkpoints.back().frame != frame)
+						checkpoints.push_back(cp);
+				}
+			}
+		} else {
+			for (int f = 0; f < frames; ++f) sf.next_frame();
+		}
+
+		// Write the replay file.
+		{
+			data_loading::file_writer<> fw(output_rep);
+			replay_saver_functions saver(saver_st);
+			saver.save_replay((int)st.current_frame, fw);
+		}
+
+		log("gen-test-replay: wrote replay '%s' (%d frames)\n", output_rep, (int)st.current_frame);
+
+		// Write hash fixture if requested.
+		if (output_hashes && output_hashes[0] != '\0' && !checkpoints.empty()) {
+			std::ofstream hf(output_hashes, std::ios::out | std::ios::trunc);
+			if (!hf) {
+				error("gen-test-replay: unable to open fixture '%s' for writing: %s",
+					output_hashes, std::strerror(errno));
+			}
+			hf << "# OpenSnowstorm replay hash fixture v1\n";
+			hf << "# Generated by gfxtest --gen-test-replay\n";
+			hf << "replay: " << output_rep << "\n";
+			hf << "# frame hash\n";
+			for (const auto& cp : checkpoints) {
+				hf << format("%d 0x%08x\n", cp.frame, cp.hash);
+			}
+			if (!hf) {
+				error("gen-test-replay: failed writing fixture '%s'", output_hashes);
+			}
+			log("gen-test-replay: wrote hash fixture '%s' (%lld checkpoints)\n",
+				output_hashes, (long long)checkpoints.size());
+		}
+
+		log("gen-test-replay: PASS\n");
+		return 0;
+	} catch (const exception& e) {
+		log("gen-test-replay: FAIL (%s)\n", e.what());
+		return 1;
+	} catch (const std::exception& e) {
+		log("gen-test-replay: FAIL (%s)\n", e.what());
+		return 1;
+	} catch (...) {
+		log("gen-test-replay: FAIL (unknown exception)\n");
+		return 1;
+	}
 }
 
 #endif
@@ -1262,6 +1461,9 @@ int main(int argc, char** argv) {
 	int enemy_player_slot = -1;
 	int local_race = 5;
 	int enemy_race = 5;
+	int headless_map_frame_limit = 0;
+	const char* gen_test_replay_file = nullptr;
+	int gen_test_replay_frames = 240;
 
 	for (int i = 1; i < argc; ++i) {
 		if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -1349,6 +1551,25 @@ int main(int argc, char** argv) {
 				return 2;
 			}
 			record_hashes_file = argv[++i];
+		} else if (strcmp(argv[i], "--gen-test-replay") == 0) {
+			if (i + 1 >= argc) {
+				log("error: --gen-test-replay requires an output replay file path\n");
+				return 2;
+			}
+			gen_test_replay_file = argv[++i];
+		} else if (strcmp(argv[i], "--frames") == 0) {
+			if (i + 1 >= argc) {
+				log("error: --frames requires a positive integer\n");
+				return 2;
+			}
+			errno = 0;
+			char* end = nullptr;
+			long v = std::strtol(argv[++i], &end, 10);
+			if (errno != 0 || end == argv[i] || *end != '\0' || v <= 0 || v > std::numeric_limits<int>::max()) {
+				log("error: invalid --frames value '%s' (expected positive integer)\n", argv[i]);
+				return 2;
+			}
+			gen_test_replay_frames = (int)v;
 		} else if (strcmp(argv[i], "--hash-interval") == 0) {
 			if (i + 1 >= argc) {
 				log("error: --hash-interval requires a positive integer\n");
@@ -1364,6 +1585,20 @@ int main(int argc, char** argv) {
 			hash_interval = (int)v;
 		} else if (strcmp(argv[i], "--headless") == 0) {
 			headless = true;
+		} else if (strcmp(argv[i], "--headless-map") == 0) {
+			headless = true;
+			if (i + 1 < argc) {
+				errno = 0;
+				char* end = nullptr;
+				long v = std::strtol(argv[i + 1], &end, 10);
+				if (errno == 0 && end != argv[i + 1] && *end == '\0' && v > 0) {
+					headless_map_frame_limit = (int)v;
+					++i;
+				} else {
+					// Treat as a flag with no argument (use default limit).
+					headless_map_frame_limit = 0;
+				}
+			}
 		} else if (strcmp(argv[i], "--replay") == 0 && i + 1 < argc) {
 			replay_file = argv[++i];
 		} else if (argv[i][0] == '-') {
@@ -1439,6 +1674,9 @@ int main(int argc, char** argv) {
 	}
 	if (validate_replay) {
 		return run_validate_replay(replay_file);
+	}
+	if (gen_test_replay_file) {
+		return run_gen_test_replay(map_file, gen_test_replay_file, record_hashes_file, gen_test_replay_frames, hash_interval);
 	}
 	if (bench_frames > 0) {
 		return run_bench(bench_frames, replay_file);
@@ -1715,19 +1953,30 @@ int main(int argc, char** argv) {
 				ui.replay_functions::next_frame();
 			}
 		} else {
-			log("single-player headless: stepping until local victory/defeat\n");
-			while (true) {
+			// Single-player headless map mode: run until victory/defeat or
+			// frame limit.  headless_map_frame_limit==0 uses the default cap
+			// of 72000 frames (~50 minutes at fastest speed), which is large
+			// enough for most campaign missions and CI smoke tests.
+			const int frame_limit = headless_map_frame_limit > 0 ? headless_map_frame_limit : 72000;
+			log("single-player headless: stepping until local victory/defeat (limit=%d)\n", frame_limit);
+			bool result_found = false;
+			while (ui.st.current_frame < frame_limit) {
 				ui.state_functions::next_frame();
 				if (ui.has_local_player()) {
 					if (ui.player_won(ui.local_player_id)) {
-						log("single-player headless: victory at frame %d\n", ui.st.current_frame);
+						log("single-player headless: PASS (victory at frame %d)\n", ui.st.current_frame);
+						result_found = true;
 						break;
 					}
 					if (ui.player_defeated(ui.local_player_id)) {
-						log("single-player headless: defeat at frame %d\n", ui.st.current_frame);
+						log("single-player headless: PASS (defeat at frame %d)\n", ui.st.current_frame);
+						result_found = true;
 						break;
 					}
 				}
+			}
+			if (!result_found) {
+				log("single-player headless: PASS (frame limit %d reached, no crash)\n", frame_limit);
 			}
 		}
 	} else {

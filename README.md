@@ -144,8 +144,8 @@ Controls in map mode:
 
 - **Left click/drag**: select units
 - **Left click command panel**: issue tactical commands for multi-selection, plus train/morph/research/upgrade and context-sensitive abilities for single-unit selection
-- **Left click map (while a building or landing command is armed)**: place building / land building
-- **Right click**: issue default order (or cancel armed building/landing placement)
+- **Left click map (while a building, landing, or spell command is armed)**: place building / land building / fire spell
+- **Right click**: issue default order (or cancel armed building/landing/spell targeting)
 - **Middle mouse drag**: move camera
 - **S**: stop
 - **H**: hold position
@@ -163,10 +163,30 @@ Controls in map mode:
 - **1–0**: recall control group
 - **Ctrl + 1–0**: set control group
 - **Shift + 1–0**: add to control group
-- **Esc**: cancel armed building / landing placement
+- **Esc**: cancel armed building / landing placement or spell targeting mode
 - **Space / P**: pause
 - **U**: speed up simulation
 - **Z / D**: slow down simulation
+
+Spell targeting is armed from the command panel.  When a spell ability button is
+clicked (or the corresponding hotkey is pressed), a targeting mode is activated.
+The next right-click on the map or a unit fires the spell.  ESC cancels.
+
+Covered spells:
+
+| Unit | Spell |
+|---|---|
+| Science Vessel | Scanner Sweep, Defensive Matrix, Irradiate, EMP Shockwave |
+| Battlecruiser | Yamato Gun |
+| Ghost | Lockdown |
+| Vulture | Spider Mines |
+| Medic | Healing, Restoration, Optical Flare |
+| Zerg Queen | Spawn Broodlings, Parasite, Ensnare, Infestation |
+| Defiler | Dark Swarm, Plague, Consume |
+| High Templar | Psionic Storm, Hallucination |
+| Arbiter | Recall, Stasis Field |
+| Dark Archon | Mind Control, Feedback, Maelstrom |
+| Corsair | Disruption Web |
 
 ### Benchmark (no game data required for the build itself)
 
@@ -211,6 +231,30 @@ replay: maps/myrep.rep
 ```bash
 ./gfxtest --headless --replay maps/myrep.rep
 ```
+
+### Headless map smoke test (no replay required, no display)
+
+```bash
+# Load a map and step up to 240 frames; exits 0 if no crash
+./gfxtest --map maps/mymap.scx --headless-map 240
+```
+
+Output: `single-player headless: PASS (...)` on success.
+
+### Generate a self-contained test replay + hash fixture
+
+```bash
+# Generate a minimal replay (240 frames) from a BW map file
+./gfxtest --gen-test-replay maps/test.rep --map maps/mymap.scx \
+          --frames 240 --record-hashes maps/test.hashes
+
+# Verify it round-trips correctly
+./gfxtest --validate-replay --replay maps/test.rep
+./gfxtest --verify-hashes maps/test.hashes --replay maps/test.rep
+```
+
+Committing the resulting `maps/test.rep` + `maps/test.hashes` activates the CI
+`validate-replay` regression gate automatically.
 
 ---
 
