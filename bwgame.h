@@ -20,6 +20,7 @@
 
 #include "data_loading.h"
 #include "korean.h"
+#include "simulation_constants.h"
 
 #include <algorithm>
 #include <utility>
@@ -29,7 +30,119 @@
 
 namespace bwgame {
 
-// (lookup tables relocated to bwgame_tables.h – included above via the facade)
+
+template<typename T>
+struct autocast {
+	T val;
+	operator T() {
+		return val;
+	}
+	T operator->() {
+		return val;
+	}
+	autocast(T val) : val(val) {}
+	template<typename T2, typename std::enable_if<std::is_same<typename std::decay<T2>::type, unit_t>::value>::type* = nullptr>
+	autocast(T2* ptr) : val(ptr->unit_type) {}
+	template<typename T2>
+	autocast(type_id<T2> ptr) : val(ptr) {}
+};
+
+using unit_type_autocast = autocast<const unit_type_t*>;
+
+struct global_state {
+
+	global_state() = default;
+	global_state(global_state&) = delete;
+	global_state(global_state&&) = default;
+	global_state& operator=(global_state&) = delete;
+	global_state& operator=(global_state&&) = default;
+
+	flingy_types_t flingy_types;
+	sprite_types_t sprite_types;
+	image_types_t image_types;
+	order_types_t order_types;
+	iscript_t iscript;
+
+	a_vector<grp_t> grps;
+	a_vector<grp_t*> image_grp;
+	a_vector<a_vector<a_vector<xy>>> lo_offsets;
+	a_vector<std::array<a_vector<a_vector<xy>>*, 6>> image_lo_offsets;
+
+	a_vector<uint8_t> units_dat;
+	a_vector<uint8_t> weapons_dat;
+	a_vector<uint8_t> upgrades_dat;
+	a_vector<uint8_t> techdata_dat;
+
+	a_vector<uint8_t> melee_trg;
+
+	std::array<a_vector<uint8_t>, 8> tileset_vf4;
+	std::array<a_vector<uint8_t>, 8> tileset_cv5;
+};
+
+struct game_state {
+
+	game_state() = default;
+	game_state(const game_state&) = delete;
+	game_state(game_state&&) = default;
+	game_state& operator=(const game_state&) = delete;
+	game_state& operator=(game_state&&) = default;
+
+	size_t map_tile_width;
+	size_t map_tile_height;
+	size_t map_walk_width;
+	size_t map_walk_height;
+	size_t map_width;
+	size_t map_height;
+
+	a_vector<a_string> map_strings;
+
+	a_string scenario_name;
+	a_string scenario_description;
+
+	type_indexed_array<int, UnitTypes> unit_air_strength;
+	type_indexed_array<int, UnitTypes> unit_ground_strength;
+
+	struct force_t {
+		a_string name;
+		uint8_t flags;
+	};
+	std::array<force_t, 4> forces;
+
+	std::array<sight_values_t, 12> sight_values;
+
+	size_t tileset_index;
+
+	a_vector<tile_id> gfx_tiles;
+	a_vector<cv5_entry> cv5;
+	a_vector<vf4_entry> vf4;
+	a_vector<uint16_t> mega_tile_flags;
+
+	unit_types_t unit_types;
+	weapon_types_t weapon_types;
+	upgrade_types_t upgrade_types;
+	tech_types_t tech_types;
+
+	std::array<type_indexed_array<bool, UnitTypes>, 12> unit_type_allowed;
+	std::array<type_indexed_array<int, UpgradeTypes>, 12> max_upgrade_levels;
+	std::array<type_indexed_array<bool, TechTypes>, 12> tech_available;
+
+	std::array<xy, 12> start_locations;
+
+	int max_unit_width;
+	int max_unit_height;
+
+	size_t repulse_field_width;
+	size_t repulse_field_height;
+
+	regions_t regions;
+
+	a_vector<trigger> triggers;
+};
+
+struct state_base_copyable {
+
+	const global_state* global;
+	game_state* game;
 
 // (state type definitions relocated to bwgame_state.h – included above via the facade)
 
