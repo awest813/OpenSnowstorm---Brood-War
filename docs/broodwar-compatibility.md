@@ -20,7 +20,7 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | Order/AI behavior parity | Unit command edge-cases drive real gameplay differences. | **In progress** | Patrol (action 29) and building Land (action 36) are now dispatched. Continue with remaining BW-specific actions. |
 | Combat and damage interactions | Small damage/timing mismatches cascade into macro-level divergence. | **Planned** | Start fixture scenarios for cooldown timing, armor/upgrade interactions, splash behavior. |
 | Economy timings | Worker and production timing parity is essential for bots and replays. | **Partially validated** | Starting gas is now loaded from replays and applied via `setup_info.starting_gas`. Resource-type-1 custom starts correctly set both minerals and gas. |
-| Replay format compatibility | Durable replay I/O is required for regression and tooling interoperability. | **Partially validated** | `is_broodwar` flag now captured in `replay_state`. Starting gas round-trips correctly. Replay saver writes `starting_gas` from setup info. |
+| Replay format compatibility | Durable replay I/O is required for regression and tooling interoperability. | **Partially validated** | `is_broodwar` flag now captured in `replay_state`. Starting gas round-trips correctly. Replay saver writes `starting_gas` from setup info. `gfxtest --validate-replay` now validates replay container/header and action frame-stream consistency. |
 | Multiplayer sync behavior | Action scheduling and frame stepping must stay BWAPI-compatible. | **Partially validated** | Protocol version constant (`sync_protocol_version`) and `desync_report` structure added. Hash divergences now emit a structured diagnostic before client kill. |
 
 ## Current phase focus
@@ -41,6 +41,13 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | `desync_report` struct | `sync_protocol.h` | Structured desync diagnostic: frame, hash index, expected/received hash, client ID/slot. |
 | Desync report emission | `sync.h` | On insync mismatch, a `desync_report` is appended to `sync_state::desync_reports` and `desync_detected` is set before the client is killed. |
 | Richer insync hash | `sync.h` | Hash now includes `current_frame`, unit `owner`, and `order_type->id` for each visible unit, improving divergence granularity. |
+| Replay validation command | `ui/gfxtest.cpp` | `--validate-replay` performs replay load/header checks plus action frame-stream consistency validation and returns non-zero on failure. |
+
+### Validation command (Phase 2 replay sanity check)
+
+- Command: `./gfxtest --validate-replay --replay <path/to/replay.rep>`
+- Expected pass signal: output contains `validate: PASS` and process exits `0`.
+- Expected fail signal: output contains `validate: FAIL (...)` and process exits non-zero.
 
 ## Immediate backlog (starter slice)
 
@@ -52,7 +59,7 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 ## Next steps
 
 1. Add remaining missing BW replay actions (game-speed changes, vision toggles) behind graceful skip paths.
-2. Implement replay validation pass (header + frame-stream consistency check) as documented in `phase-2-kickoff.md`.
+2. Promote `--validate-replay` into CI as a non-optional compatibility gate.
 3. Wire `desync_report` into a log-file or stderr formatter for CI consumption.
 4. Begin combat fixture scenarios for damage-type / armor / splash edge cases.
 
