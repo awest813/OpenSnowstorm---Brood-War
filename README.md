@@ -156,7 +156,7 @@ Controls in map mode:
 - **G**: siege / unsiege (context-sensitive)
 - **C**: cloak / decloak (context-sensitive)
 - **R**: return carried cargo
-- **L**: unload all (transport)
+- **L**: unload all (transport), otherwise lift off / land for Terran flying-building structures
 - **I**: stim pack (Marine / Firebat, when researched)
 - **M**: merge archon / dark archon (High / Dark Templar, when researched)
 - **Tab**: center camera on selected unit(s)

@@ -1206,7 +1206,7 @@ static void print_usage(const char* argv0) {
 		"  s stop              h hold position            a attack-move (next right click)\n"
 		"  t patrol (next right click)   x cancel current production/research/morph\n"
 		"  b burrow/unburrow   g siege/unsiege   c cloak/decloak\n"
-		"  r return cargo      l unload all (transport)\n"
+		"  r return cargo      l unload all (transport) / lift off-land (Terran flying buildings)\n"
 		"  i stim pack (Marine/Firebat)   m merge archon/dark archon (High/Dark Templar)\n"
 		"  tab center camera on selection\n"
 		"  ctrl+<1-0> set group   shift+<1-0> add group   <1-0> recall group\n"
