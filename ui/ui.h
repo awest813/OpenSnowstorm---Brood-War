@@ -1643,6 +1643,31 @@ struct ui_functions: ui_util_functions {
 			case live_command_kind_t::ability_stim: fill = 162; break;
 			case live_command_kind_t::ability_morph_archon: fill = 175; break;
 			case live_command_kind_t::ability_morph_dark_archon: fill = 186; break;
+			case live_command_kind_t::ability_scanner_sweep: fill = 33; break;
+			case live_command_kind_t::ability_defensive_matrix: fill = 48; break;
+			case live_command_kind_t::ability_irradiate: fill = 74; break;
+			case live_command_kind_t::ability_emp_shockwave: fill = 93; break;
+			case live_command_kind_t::ability_yamato_gun: fill = 140; break;
+			case live_command_kind_t::ability_lockdown: fill = 111; break;
+			case live_command_kind_t::ability_spider_mines: fill = 102; break;
+			case live_command_kind_t::ability_healing: fill = 122; break;
+			case live_command_kind_t::ability_restoration: fill = 162; break;
+			case live_command_kind_t::ability_optical_flare: fill = 175; break;
+			case live_command_kind_t::ability_spawn_broodlings: fill = 186; break;
+			case live_command_kind_t::ability_parasite: fill = 33; break;
+			case live_command_kind_t::ability_dark_swarm: fill = 48; break;
+			case live_command_kind_t::ability_plague: fill = 74; break;
+			case live_command_kind_t::ability_consume: fill = 93; break;
+			case live_command_kind_t::ability_ensnare: fill = 140; break;
+			case live_command_kind_t::ability_psionic_storm: fill = 111; break;
+			case live_command_kind_t::ability_hallucination: fill = 102; break;
+			case live_command_kind_t::ability_recall: fill = 122; break;
+			case live_command_kind_t::ability_stasis_field: fill = 162; break;
+			case live_command_kind_t::ability_disruption_web: fill = 175; break;
+			case live_command_kind_t::ability_mind_control: fill = 186; break;
+			case live_command_kind_t::ability_feedback: fill = 33; break;
+			case live_command_kind_t::ability_maelstrom: fill = 48; break;
+			case live_command_kind_t::ability_infestation: fill = 74; break;
 			}
 			if (!enabled) fill = 14;
 			fill_rectangle(data, data_pitch, rect{slot.from + xy(2, 2), slot.to - xy(2, 2)}, fill);
@@ -1656,7 +1681,32 @@ struct ui_functions: ui_util_functions {
 				line_rectangle(data, data_pitch, rect{slot.from + xy(1, 1), slot.to - xy(1, 1)}, 255);
 			}
 			if ((cmd.kind == live_command_kind_t::tactical_attack_move_mode && pending_order_mode == pending_order_mode_t::attack_move) ||
-			    (cmd.kind == live_command_kind_t::tactical_patrol_mode && pending_order_mode == pending_order_mode_t::patrol)) {
+			    (cmd.kind == live_command_kind_t::tactical_patrol_mode && pending_order_mode == pending_order_mode_t::patrol) ||
+			    (cmd.kind == live_command_kind_t::ability_scanner_sweep && pending_order_mode == pending_order_mode_t::spell_scanner_sweep) ||
+			    (cmd.kind == live_command_kind_t::ability_defensive_matrix && pending_order_mode == pending_order_mode_t::spell_defensive_matrix) ||
+			    (cmd.kind == live_command_kind_t::ability_irradiate && pending_order_mode == pending_order_mode_t::spell_irradiate) ||
+			    (cmd.kind == live_command_kind_t::ability_emp_shockwave && pending_order_mode == pending_order_mode_t::spell_emp_shockwave) ||
+			    (cmd.kind == live_command_kind_t::ability_yamato_gun && pending_order_mode == pending_order_mode_t::spell_yamato_gun) ||
+			    (cmd.kind == live_command_kind_t::ability_lockdown && pending_order_mode == pending_order_mode_t::spell_lockdown) ||
+			    (cmd.kind == live_command_kind_t::ability_spider_mines && pending_order_mode == pending_order_mode_t::spell_spider_mines) ||
+			    (cmd.kind == live_command_kind_t::ability_healing && pending_order_mode == pending_order_mode_t::spell_healing) ||
+			    (cmd.kind == live_command_kind_t::ability_restoration && pending_order_mode == pending_order_mode_t::spell_restoration) ||
+			    (cmd.kind == live_command_kind_t::ability_optical_flare && pending_order_mode == pending_order_mode_t::spell_optical_flare) ||
+			    (cmd.kind == live_command_kind_t::ability_spawn_broodlings && pending_order_mode == pending_order_mode_t::spell_spawn_broodlings) ||
+			    (cmd.kind == live_command_kind_t::ability_parasite && pending_order_mode == pending_order_mode_t::spell_parasite) ||
+			    (cmd.kind == live_command_kind_t::ability_dark_swarm && pending_order_mode == pending_order_mode_t::spell_dark_swarm) ||
+			    (cmd.kind == live_command_kind_t::ability_plague && pending_order_mode == pending_order_mode_t::spell_plague) ||
+			    (cmd.kind == live_command_kind_t::ability_consume && pending_order_mode == pending_order_mode_t::spell_consume) ||
+			    (cmd.kind == live_command_kind_t::ability_ensnare && pending_order_mode == pending_order_mode_t::spell_ensnare) ||
+			    (cmd.kind == live_command_kind_t::ability_psionic_storm && pending_order_mode == pending_order_mode_t::spell_psionic_storm) ||
+			    (cmd.kind == live_command_kind_t::ability_hallucination && pending_order_mode == pending_order_mode_t::spell_hallucination) ||
+			    (cmd.kind == live_command_kind_t::ability_recall && pending_order_mode == pending_order_mode_t::spell_recall) ||
+			    (cmd.kind == live_command_kind_t::ability_stasis_field && pending_order_mode == pending_order_mode_t::spell_stasis_field) ||
+			    (cmd.kind == live_command_kind_t::ability_disruption_web && pending_order_mode == pending_order_mode_t::spell_disruption_web) ||
+			    (cmd.kind == live_command_kind_t::ability_mind_control && pending_order_mode == pending_order_mode_t::spell_mind_control) ||
+			    (cmd.kind == live_command_kind_t::ability_feedback && pending_order_mode == pending_order_mode_t::spell_feedback) ||
+			    (cmd.kind == live_command_kind_t::ability_maelstrom && pending_order_mode == pending_order_mode_t::spell_maelstrom) ||
+			    (cmd.kind == live_command_kind_t::ability_infestation && pending_order_mode == pending_order_mode_t::spell_infestation)) {
 				line_rectangle(data, data_pitch, rect{slot.from + xy(1, 1), slot.to - xy(1, 1)}, 255);
 			}
 			int payload_id = live_command_payload_id(cmd);
@@ -1929,7 +1979,40 @@ struct ui_functions: ui_util_functions {
 	enum class pending_order_mode_t {
 		none,
 		attack_move,
-		patrol
+		patrol,
+		// Targeted spell modes: right-click issues the corresponding order.
+		// Point-targeted (no unit required): scanner_sweep, defensive_matrix,
+		// dark_swarm, plague, ensnare, psionic_storm, disruption_web,
+		// emp_shockwave, spider_mines, recall, stasis_field, maelstrom,
+		// hallucination, consume.
+		// Unit-targeted (clicks on a unit): irradiate, lockdown, yamato_gun,
+		// restoration, optical_flare, spawn_broodlings, parasite, feedback,
+		// mind_control, healing.
+		spell_scanner_sweep,
+		spell_defensive_matrix,
+		spell_irradiate,
+		spell_emp_shockwave,
+		spell_yamato_gun,
+		spell_lockdown,
+		spell_spider_mines,
+		spell_healing,
+		spell_restoration,
+		spell_optical_flare,
+		spell_spawn_broodlings,
+		spell_parasite,
+		spell_dark_swarm,
+		spell_plague,
+		spell_consume,
+		spell_ensnare,
+		spell_psionic_storm,
+		spell_hallucination,
+		spell_recall,
+		spell_stasis_field,
+		spell_disruption_web,
+		spell_mind_control,
+		spell_feedback,
+		spell_maelstrom,
+		spell_infestation,
 	};
 
 	enum class live_command_kind_t {
@@ -1953,7 +2036,33 @@ struct ui_functions: ui_util_functions {
 		ability_liftoff_land_toggle,
 		ability_stim,
 		ability_morph_archon,
-		ability_morph_dark_archon
+		ability_morph_dark_archon,
+		// Targeted spells (activate targeting mode; right-click issues order).
+		ability_scanner_sweep,
+		ability_defensive_matrix,
+		ability_irradiate,
+		ability_emp_shockwave,
+		ability_yamato_gun,
+		ability_lockdown,
+		ability_spider_mines,
+		ability_healing,
+		ability_restoration,
+		ability_optical_flare,
+		ability_spawn_broodlings,
+		ability_parasite,
+		ability_dark_swarm,
+		ability_plague,
+		ability_consume,
+		ability_ensnare,
+		ability_psionic_storm,
+		ability_hallucination,
+		ability_recall,
+		ability_stasis_field,
+		ability_disruption_web,
+		ability_mind_control,
+		ability_feedback,
+		ability_maelstrom,
+		ability_infestation,
 	};
 
 	struct live_command_t {
@@ -2137,6 +2246,56 @@ struct ui_functions: ui_util_functions {
 			return live_command_can_morph_archon(source);
 		case live_command_kind_t::ability_morph_dark_archon:
 			return live_command_can_morph_dark_archon(source);
+		case live_command_kind_t::ability_scanner_sweep:
+			return live_command_can_scanner_sweep(source);
+		case live_command_kind_t::ability_defensive_matrix:
+			return live_command_can_defensive_matrix(source);
+		case live_command_kind_t::ability_irradiate:
+			return live_command_can_irradiate(source);
+		case live_command_kind_t::ability_emp_shockwave:
+			return live_command_can_emp_shockwave(source);
+		case live_command_kind_t::ability_yamato_gun:
+			return live_command_can_yamato_gun(source);
+		case live_command_kind_t::ability_lockdown:
+			return live_command_can_lockdown(source);
+		case live_command_kind_t::ability_spider_mines:
+			return live_command_can_spider_mines(source);
+		case live_command_kind_t::ability_healing:
+			return live_command_can_healing(source);
+		case live_command_kind_t::ability_restoration:
+			return live_command_can_restoration(source);
+		case live_command_kind_t::ability_optical_flare:
+			return live_command_can_optical_flare(source);
+		case live_command_kind_t::ability_spawn_broodlings:
+			return live_command_can_spawn_broodlings(source);
+		case live_command_kind_t::ability_parasite:
+			return live_command_can_parasite(source);
+		case live_command_kind_t::ability_dark_swarm:
+			return live_command_can_dark_swarm(source);
+		case live_command_kind_t::ability_plague:
+			return live_command_can_plague(source);
+		case live_command_kind_t::ability_consume:
+			return live_command_can_consume(source);
+		case live_command_kind_t::ability_ensnare:
+			return live_command_can_ensnare(source);
+		case live_command_kind_t::ability_psionic_storm:
+			return live_command_can_psionic_storm(source);
+		case live_command_kind_t::ability_hallucination:
+			return live_command_can_hallucination(source);
+		case live_command_kind_t::ability_recall:
+			return live_command_can_recall(source);
+		case live_command_kind_t::ability_stasis_field:
+			return live_command_can_stasis_field(source);
+		case live_command_kind_t::ability_disruption_web:
+			return live_command_can_disruption_web(source);
+		case live_command_kind_t::ability_mind_control:
+			return live_command_can_mind_control(source);
+		case live_command_kind_t::ability_feedback:
+			return live_command_can_feedback(source);
+		case live_command_kind_t::ability_maelstrom:
+			return live_command_can_maelstrom(source);
+		case live_command_kind_t::ability_infestation:
+			return live_command_can_infestation(source);
 		}
 		return false;
 	}
@@ -2181,6 +2340,56 @@ struct ui_functions: ui_util_functions {
 			return 908;
 		case live_command_kind_t::ability_morph_dark_archon:
 			return 909;
+		case live_command_kind_t::ability_scanner_sweep:
+			return 920;
+		case live_command_kind_t::ability_defensive_matrix:
+			return 921;
+		case live_command_kind_t::ability_irradiate:
+			return 922;
+		case live_command_kind_t::ability_emp_shockwave:
+			return 923;
+		case live_command_kind_t::ability_yamato_gun:
+			return 924;
+		case live_command_kind_t::ability_lockdown:
+			return 925;
+		case live_command_kind_t::ability_spider_mines:
+			return 926;
+		case live_command_kind_t::ability_healing:
+			return 927;
+		case live_command_kind_t::ability_restoration:
+			return 928;
+		case live_command_kind_t::ability_optical_flare:
+			return 929;
+		case live_command_kind_t::ability_spawn_broodlings:
+			return 930;
+		case live_command_kind_t::ability_parasite:
+			return 931;
+		case live_command_kind_t::ability_dark_swarm:
+			return 932;
+		case live_command_kind_t::ability_plague:
+			return 933;
+		case live_command_kind_t::ability_consume:
+			return 934;
+		case live_command_kind_t::ability_ensnare:
+			return 935;
+		case live_command_kind_t::ability_psionic_storm:
+			return 936;
+		case live_command_kind_t::ability_hallucination:
+			return 937;
+		case live_command_kind_t::ability_recall:
+			return 938;
+		case live_command_kind_t::ability_stasis_field:
+			return 939;
+		case live_command_kind_t::ability_disruption_web:
+			return 940;
+		case live_command_kind_t::ability_mind_control:
+			return 941;
+		case live_command_kind_t::ability_feedback:
+			return 942;
+		case live_command_kind_t::ability_maelstrom:
+			return 943;
+		case live_command_kind_t::ability_infestation:
+			return 944;
 		}
 		return 0;
 	}
@@ -2287,6 +2496,101 @@ struct ui_functions: ui_util_functions {
 		return unit_can_use_tech(source, get_tech_type(TechTypes::Dark_Archon_Meld), local_player_id);
 	}
 
+	// Returns true when the source unit can use a tech that requires a map
+	// target (position or unit), given that the tech is unlocked and the unit
+	// has enough energy.
+	bool live_command_can_use_tech(const unit_t* source, TechTypes tech_id) const {
+		if (!source || source->owner != local_player_id) return false;
+		const tech_type_t* tech = get_tech_type(tech_id);
+		if (!unit_can_use_tech(source, tech, local_player_id)) return false;
+		return source->energy >= fp8::integer(tech->energy_cost);
+	}
+
+	bool live_command_can_scanner_sweep(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		if (!unit_is(source, UnitTypes::Terran_Comsat_Station)) return false;
+		return live_command_can_use_tech(source, TechTypes::Scanner_Sweep);
+	}
+	bool live_command_can_defensive_matrix(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Defensive_Matrix);
+	}
+	bool live_command_can_irradiate(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Irradiate);
+	}
+	bool live_command_can_emp_shockwave(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::EMP_Shockwave);
+	}
+	bool live_command_can_yamato_gun(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Yamato_Gun);
+	}
+	bool live_command_can_lockdown(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Lockdown);
+	}
+	bool live_command_can_spider_mines(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		if (!unit_is(source, UnitTypes::Terran_Vulture)) return false;
+		if (!unit_can_use_tech(source, get_tech_type(TechTypes::Spider_Mines), local_player_id)) return false;
+		return source->vulture.spider_mine_count > 0;
+	}
+	bool live_command_can_healing(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		if (!unit_is(source, UnitTypes::Terran_Medic)) return false;
+		return live_command_can_use_tech(source, TechTypes::Healing);
+	}
+	bool live_command_can_restoration(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Restoration);
+	}
+	bool live_command_can_optical_flare(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Optical_Flare);
+	}
+	bool live_command_can_spawn_broodlings(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Spawn_Broodlings);
+	}
+	bool live_command_can_parasite(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Parasite);
+	}
+	bool live_command_can_dark_swarm(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Dark_Swarm);
+	}
+	bool live_command_can_plague(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Plague);
+	}
+	bool live_command_can_consume(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Consume);
+	}
+	bool live_command_can_ensnare(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Ensnare);
+	}
+	bool live_command_can_psionic_storm(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Psionic_Storm);
+	}
+	bool live_command_can_hallucination(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Hallucination);
+	}
+	bool live_command_can_recall(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Recall);
+	}
+	bool live_command_can_stasis_field(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Stasis_Field);
+	}
+	bool live_command_can_disruption_web(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Disruption_Web);
+	}
+	bool live_command_can_mind_control(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Mind_Control);
+	}
+	bool live_command_can_feedback(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Feedback);
+	}
+	bool live_command_can_maelstrom(const unit_t* source) const {
+		return live_command_can_use_tech(source, TechTypes::Maelstrom);
+	}
+	bool live_command_can_infestation(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		if (!unit_is(source, UnitTypes::Zerg_Queen)) return false;
+		return live_command_can_use_tech(source, TechTypes::Infestation);
+	}
+
 	bool execute_live_cancel_command() {
 		if (action_cancel_research(local_player_id)) return true;
 		if (action_cancel_upgrade(local_player_id)) return true;
@@ -2332,6 +2636,58 @@ struct ui_functions: ui_util_functions {
 			return action_morph_archon(local_player_id);
 		case live_command_kind_t::ability_morph_dark_archon:
 			return action_morph_dark_archon(local_player_id);
+		// Targeted spells: arm a pending order mode so the next right-click
+		// dispatches the correct order.
+		case live_command_kind_t::ability_scanner_sweep:
+			pending_order_mode = pending_order_mode_t::spell_scanner_sweep; return true;
+		case live_command_kind_t::ability_defensive_matrix:
+			pending_order_mode = pending_order_mode_t::spell_defensive_matrix; return true;
+		case live_command_kind_t::ability_irradiate:
+			pending_order_mode = pending_order_mode_t::spell_irradiate; return true;
+		case live_command_kind_t::ability_emp_shockwave:
+			pending_order_mode = pending_order_mode_t::spell_emp_shockwave; return true;
+		case live_command_kind_t::ability_yamato_gun:
+			pending_order_mode = pending_order_mode_t::spell_yamato_gun; return true;
+		case live_command_kind_t::ability_lockdown:
+			pending_order_mode = pending_order_mode_t::spell_lockdown; return true;
+		case live_command_kind_t::ability_spider_mines:
+			pending_order_mode = pending_order_mode_t::spell_spider_mines; return true;
+		case live_command_kind_t::ability_healing:
+			pending_order_mode = pending_order_mode_t::spell_healing; return true;
+		case live_command_kind_t::ability_restoration:
+			pending_order_mode = pending_order_mode_t::spell_restoration; return true;
+		case live_command_kind_t::ability_optical_flare:
+			pending_order_mode = pending_order_mode_t::spell_optical_flare; return true;
+		case live_command_kind_t::ability_spawn_broodlings:
+			pending_order_mode = pending_order_mode_t::spell_spawn_broodlings; return true;
+		case live_command_kind_t::ability_parasite:
+			pending_order_mode = pending_order_mode_t::spell_parasite; return true;
+		case live_command_kind_t::ability_dark_swarm:
+			pending_order_mode = pending_order_mode_t::spell_dark_swarm; return true;
+		case live_command_kind_t::ability_plague:
+			pending_order_mode = pending_order_mode_t::spell_plague; return true;
+		case live_command_kind_t::ability_consume:
+			pending_order_mode = pending_order_mode_t::spell_consume; return true;
+		case live_command_kind_t::ability_ensnare:
+			pending_order_mode = pending_order_mode_t::spell_ensnare; return true;
+		case live_command_kind_t::ability_psionic_storm:
+			pending_order_mode = pending_order_mode_t::spell_psionic_storm; return true;
+		case live_command_kind_t::ability_hallucination:
+			pending_order_mode = pending_order_mode_t::spell_hallucination; return true;
+		case live_command_kind_t::ability_recall:
+			pending_order_mode = pending_order_mode_t::spell_recall; return true;
+		case live_command_kind_t::ability_stasis_field:
+			pending_order_mode = pending_order_mode_t::spell_stasis_field; return true;
+		case live_command_kind_t::ability_disruption_web:
+			pending_order_mode = pending_order_mode_t::spell_disruption_web; return true;
+		case live_command_kind_t::ability_mind_control:
+			pending_order_mode = pending_order_mode_t::spell_mind_control; return true;
+		case live_command_kind_t::ability_feedback:
+			pending_order_mode = pending_order_mode_t::spell_feedback; return true;
+		case live_command_kind_t::ability_maelstrom:
+			pending_order_mode = pending_order_mode_t::spell_maelstrom; return true;
+		case live_command_kind_t::ability_infestation:
+			pending_order_mode = pending_order_mode_t::spell_infestation; return true;
 		default:
 			return false;
 		}
@@ -2398,6 +2754,31 @@ struct ui_functions: ui_util_functions {
 		add_ability(live_command_kind_t::ability_stim, live_command_can_stim(source));
 		add_ability(live_command_kind_t::ability_morph_archon, live_command_can_morph_archon(source));
 		add_ability(live_command_kind_t::ability_morph_dark_archon, live_command_can_morph_dark_archon(source));
+		add_ability(live_command_kind_t::ability_scanner_sweep, live_command_can_scanner_sweep(source));
+		add_ability(live_command_kind_t::ability_defensive_matrix, live_command_can_defensive_matrix(source));
+		add_ability(live_command_kind_t::ability_irradiate, live_command_can_irradiate(source));
+		add_ability(live_command_kind_t::ability_emp_shockwave, live_command_can_emp_shockwave(source));
+		add_ability(live_command_kind_t::ability_yamato_gun, live_command_can_yamato_gun(source));
+		add_ability(live_command_kind_t::ability_lockdown, live_command_can_lockdown(source));
+		add_ability(live_command_kind_t::ability_spider_mines, live_command_can_spider_mines(source));
+		add_ability(live_command_kind_t::ability_healing, live_command_can_healing(source));
+		add_ability(live_command_kind_t::ability_restoration, live_command_can_restoration(source));
+		add_ability(live_command_kind_t::ability_optical_flare, live_command_can_optical_flare(source));
+		add_ability(live_command_kind_t::ability_spawn_broodlings, live_command_can_spawn_broodlings(source));
+		add_ability(live_command_kind_t::ability_parasite, live_command_can_parasite(source));
+		add_ability(live_command_kind_t::ability_dark_swarm, live_command_can_dark_swarm(source));
+		add_ability(live_command_kind_t::ability_plague, live_command_can_plague(source));
+		add_ability(live_command_kind_t::ability_consume, live_command_can_consume(source));
+		add_ability(live_command_kind_t::ability_ensnare, live_command_can_ensnare(source));
+		add_ability(live_command_kind_t::ability_psionic_storm, live_command_can_psionic_storm(source));
+		add_ability(live_command_kind_t::ability_hallucination, live_command_can_hallucination(source));
+		add_ability(live_command_kind_t::ability_recall, live_command_can_recall(source));
+		add_ability(live_command_kind_t::ability_stasis_field, live_command_can_stasis_field(source));
+		add_ability(live_command_kind_t::ability_disruption_web, live_command_can_disruption_web(source));
+		add_ability(live_command_kind_t::ability_mind_control, live_command_can_mind_control(source));
+		add_ability(live_command_kind_t::ability_feedback, live_command_can_feedback(source));
+		add_ability(live_command_kind_t::ability_maelstrom, live_command_can_maelstrom(source));
+		add_ability(live_command_kind_t::ability_infestation, live_command_can_infestation(source));
 
 		for (const auto& v : game_st.unit_types.vec) {
 			const unit_type_t* unit_type = &v;
@@ -2528,6 +2909,56 @@ struct ui_functions: ui_util_functions {
 			ok = action_order(local_player_id, get_order_type(Orders::AttackMove), map_pos, target, nullptr, queue);
 		} else if (pending_order_mode == pending_order_mode_t::patrol) {
 			ok = action_patrol(local_player_id, map_pos, queue);
+		} else if (pending_order_mode == pending_order_mode_t::spell_scanner_sweep) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastScannerSweep), map_pos, nullptr, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_defensive_matrix) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastDefensiveMatrix), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_irradiate) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastIrradiate), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_emp_shockwave) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastEMPShockwave), map_pos, nullptr, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_yamato_gun) {
+			ok = action_order(local_player_id, get_order_type(Orders::FireYamatoGun), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_lockdown) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastLockdown), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_spider_mines) {
+			ok = action_order(local_player_id, get_order_type(Orders::PlaceMine), map_pos, nullptr, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_healing) {
+			ok = action_order(local_player_id, get_order_type(Orders::MedicHeal), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_restoration) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastRestoration), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_optical_flare) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastOpticalFlare), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_spawn_broodlings) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastSpawnBroodlings), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_parasite) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastParasite), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_dark_swarm) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastDarkSwarm), map_pos, nullptr, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_plague) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastPlague), map_pos, nullptr, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_consume) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastConsume), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_ensnare) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastEnsnare), map_pos, nullptr, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_psionic_storm) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastPsionicStorm), map_pos, nullptr, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_hallucination) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastHallucination), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_recall) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastRecall), map_pos, nullptr, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_stasis_field) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastStasisField), map_pos, nullptr, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_disruption_web) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastDisruptionWeb), map_pos, nullptr, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_mind_control) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastMindControl), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_feedback) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastFeedback), map_pos, target, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_maelstrom) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastMaelstrom), map_pos, nullptr, nullptr, false);
+		} else if (pending_order_mode == pending_order_mode_t::spell_infestation) {
+			ok = action_order(local_player_id, get_order_type(Orders::CastInfestation), map_pos, target, nullptr, false);
 		} else {
 			ok = action_default_order(local_player_id, map_pos, target, nullptr, queue);
 		}
@@ -2598,6 +3029,31 @@ struct ui_functions: ui_util_functions {
 		case live_command_kind_t::ability_stim:
 		case live_command_kind_t::ability_morph_archon:
 		case live_command_kind_t::ability_morph_dark_archon:
+		case live_command_kind_t::ability_scanner_sweep:
+		case live_command_kind_t::ability_defensive_matrix:
+		case live_command_kind_t::ability_irradiate:
+		case live_command_kind_t::ability_emp_shockwave:
+		case live_command_kind_t::ability_yamato_gun:
+		case live_command_kind_t::ability_lockdown:
+		case live_command_kind_t::ability_spider_mines:
+		case live_command_kind_t::ability_healing:
+		case live_command_kind_t::ability_restoration:
+		case live_command_kind_t::ability_optical_flare:
+		case live_command_kind_t::ability_spawn_broodlings:
+		case live_command_kind_t::ability_parasite:
+		case live_command_kind_t::ability_dark_swarm:
+		case live_command_kind_t::ability_plague:
+		case live_command_kind_t::ability_consume:
+		case live_command_kind_t::ability_ensnare:
+		case live_command_kind_t::ability_psionic_storm:
+		case live_command_kind_t::ability_hallucination:
+		case live_command_kind_t::ability_recall:
+		case live_command_kind_t::ability_stasis_field:
+		case live_command_kind_t::ability_disruption_web:
+		case live_command_kind_t::ability_mind_control:
+		case live_command_kind_t::ability_feedback:
+		case live_command_kind_t::ability_maelstrom:
+		case live_command_kind_t::ability_infestation:
 			cancel_live_build_placement();
 			ok = execute_live_ability_command(cmd.kind, false);
 			break;
