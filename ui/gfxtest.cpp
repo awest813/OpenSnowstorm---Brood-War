@@ -1200,7 +1200,7 @@ static void print_usage(const char* argv0) {
 		"note: --game-type ums preserves authored slot topology by default.\n"
 		"\n"
 		"single-player controls (map mode):\n"
-		"  left drag/select    left click command panel   middle drag camera\n"
+		"  left drag/select    left click command panel (multi tactical + single-unit production/abilities)   middle drag camera\n"
 		"  left click map place armed building / landing\n"
 		"  right click issue order (or cancel armed building / landing)\n"
 		"  s stop              h hold position            a attack-move (next right click)\n"
