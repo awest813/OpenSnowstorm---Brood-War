@@ -559,6 +559,7 @@ struct ui_functions: ui_util_functions {
 	bool is_replay_mode = true;
 	bool is_live_game_mode = false;
 	bool enforce_local_visibility = false;
+	bool default_enforce_local_visibility = false;
 	int local_player_id = -1;
 	int enemy_player_id = -1;
 
@@ -2495,6 +2496,9 @@ struct ui_functions: ui_util_functions {
 						} else if (e.sym == 't') {
 							cancel_live_build_placement();
 							pending_order_mode = pending_order_mode_t::patrol;
+						} else if (e.sym == 'f') {
+							enforce_local_visibility = !enforce_local_visibility;
+							ui::log("single-player: fog of war %s\n", enforce_local_visibility ? "enabled" : "disabled");
 						} else if (e.sym >= '0' && e.sym <= '9') {
 							size_t group_n = e.sym == '0' ? 9 : (size_t)(e.sym - '1');
 							int subaction = ctrl ? 0 : (shift ? 2 : 1);
@@ -2701,8 +2705,8 @@ struct ui_functions: ui_util_functions {
 
 		st.global = &global_st;
 		st.game = &game;
+		enforce_local_visibility = default_enforce_local_visibility;
 	}
 };
 
 }
-
