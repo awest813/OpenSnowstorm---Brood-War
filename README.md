@@ -3,7 +3,8 @@
 OpenSnowstorm is an **open-source, community-driven engine reimplementation** of StarCraft: Brood War — aiming to be for StarCraft what [OpenMW](https://openmw.org) is for Morrowind: a clean-room, modern, free-software engine that can run the original game's content with full fidelity, and ultimately exceed the original in moddability, platform support, and long-term preservation.
 
 > **Current state:** The engine simulation, replay, sync, and BWAPI-compatible integration layers are functional.  
-> A complete playable client experience (lobby, matchmaking, renderer) is on the long-term roadmap.  
+> A first interactive **single-player map client foundation** now exists in `gfxtest` (`--map ...`).  
+> A complete client experience (campaign frontend, lobby, matchmaking, full UX parity) remains on the long-term roadmap.  
 > Contributors at all levels are welcome.
 
 ---
@@ -42,6 +43,7 @@ OpenSnowstorm has the same ambition for **StarCraft: Brood War**:
 | Headless / benchmark mode | Added (see `--bench`, `--headless`) |
 | Replay validation sanity check | Added (see `--validate-replay`) |
 | Replay hash fixtures (record/verify) | Added (see `--record-hashes`, `--verify-hashes`) |
+| Single-player map mode (`gfxtest --map`) | Added (foundation slice) |
 | Automated determinism test suite | Planned (Phase 0) |
 | Full game client (lobby, matchmaking) | Long-term roadmap |
 
@@ -68,6 +70,7 @@ OpenSnowstorm has the same ambition for **StarCraft: Brood War**:
   - `perf_metrics.h`: lightweight frame timing (`frame_timer`, `scope_timer`, `perf_categories`)
 - **UI**
   - `ui/`: SDL2 backend, rendering, input glue (optional)
+  - Supports `--map <file.scx|file.scm>` for interactive single-player map runs
   - Supports `--bench <frames>` for headless simulation benchmarking
   - Supports `--headless` for simulation without rendering
   - Supports `--validate-replay` for replay header/frame-stream validation
@@ -88,7 +91,14 @@ OpenSnowstorm has the same ambition for **StarCraft: Brood War**:
 
 ### Build (developer)
 
-There is no single top-level CMake project yet; the build is organized around subprojects.
+A top-level CMake build is available:
+
+```bash
+cmake -B build -DOPENSNOWSTORM_BUILD_UI=ON -DOPENSNOWSTORM_BUILD_BWAPI=ON
+cmake --build build -j
+```
+
+Subproject builds are still supported:
 
 Build the BWAPI shim (headless, no SDL):
 
@@ -110,6 +120,37 @@ Build the UI library alone:
 cmake -S ui -B build/ui
 cmake --build build/ui -j
 ```
+
+### Single-player map mode (foundation)
+
+```bash
+# Interactive single-player game on a map (requires your own game data files + map file)
+./build/gfxtest --map maps/YourMap.scx --game-type melee --local-race terran --enemy-race zerg
+```
+
+Optional map-mode arguments:
+
+- `--local-player <0-7>`
+- `--enemy-player <0-7>`
+- `--game-type <melee|ums>`
+- `--local-race <zerg|terran|protoss|random>`
+- `--enemy-race <zerg|terran|protoss|random>`
+
+Controls in map mode:
+
+- **Left click/drag**: select units
+- **Right click**: issue default order
+- **Middle mouse drag**: move camera
+- **S**: stop
+- **H**: hold position
+- **A**: attack-move (applies to next right click)
+- **T**: patrol (applies to next right click)
+- **1–0**: recall control group
+- **Ctrl + 1–0**: set control group
+- **Shift + 1–0**: add to control group
+- **Space / P**: pause
+- **U**: speed up simulation
+- **Z / D**: slow down simulation
 
 ### Benchmark (no game data required for the build itself)
 
