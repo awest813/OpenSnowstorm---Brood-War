@@ -1629,6 +1629,12 @@ struct ui_functions: ui_util_functions {
 			case live_command_kind_t::build_place: fill = 117; break;
 			case live_command_kind_t::research: fill = 68; break;
 			case live_command_kind_t::upgrade: fill = 54; break;
+			case live_command_kind_t::ability_cancel: fill = 33; break;
+			case live_command_kind_t::ability_burrow_toggle: fill = 48; break;
+			case live_command_kind_t::ability_siege_toggle: fill = 74; break;
+			case live_command_kind_t::ability_cloak_toggle: fill = 140; break;
+			case live_command_kind_t::ability_return_cargo: fill = 111; break;
+			case live_command_kind_t::ability_unload_all: fill = 102; break;
 			}
 			if (!enabled) fill = 14;
 			fill_rectangle(data, data_pitch, rect{slot.from + xy(2, 2), slot.to - xy(2, 2)}, fill);
@@ -1916,7 +1922,13 @@ struct ui_functions: ui_util_functions {
 		morph_building,
 		build_place,
 		research,
-		upgrade
+		upgrade,
+		ability_cancel,
+		ability_burrow_toggle,
+		ability_siege_toggle,
+		ability_cloak_toggle,
+		ability_return_cargo,
+		ability_unload_all
 	};
 
 	struct live_command_t {
@@ -2003,6 +2015,18 @@ struct ui_functions: ui_util_functions {
 			return cmd.tech_type && unit_can_research(source, cmd.tech_type, local_player_id) && has_available_resources_for(local_player_id, cmd.tech_type);
 		case live_command_kind_t::upgrade:
 			return cmd.upgrade_type && unit_can_upgrade(source, cmd.upgrade_type, local_player_id) && has_available_resources_for(local_player_id, cmd.upgrade_type);
+		case live_command_kind_t::ability_cancel:
+			return live_command_can_cancel(source);
+		case live_command_kind_t::ability_burrow_toggle:
+			return live_command_can_burrow_toggle(source);
+		case live_command_kind_t::ability_siege_toggle:
+			return live_command_can_siege_toggle(source);
+		case live_command_kind_t::ability_cloak_toggle:
+			return live_command_can_cloak_toggle(source);
+		case live_command_kind_t::ability_return_cargo:
+			return live_command_can_return_cargo(source);
+		case live_command_kind_t::ability_unload_all:
+			return live_command_can_unload_all(source);
 		}
 		return false;
 	}
@@ -2019,8 +2043,123 @@ struct ui_functions: ui_util_functions {
 			return cmd.tech_type ? (int)cmd.tech_type->id : 0;
 		case live_command_kind_t::upgrade:
 			return cmd.upgrade_type ? (int)cmd.upgrade_type->id : 0;
+		case live_command_kind_t::ability_cancel:
+			return 901;
+		case live_command_kind_t::ability_burrow_toggle:
+			return 902;
+		case live_command_kind_t::ability_siege_toggle:
+			return 903;
+		case live_command_kind_t::ability_cloak_toggle:
+			return 904;
+		case live_command_kind_t::ability_return_cargo:
+			return 905;
+		case live_command_kind_t::ability_unload_all:
+			return 906;
 		}
 		return 0;
+	}
+
+	const tech_type_t* live_cloak_tech_for_unit(const unit_t* source) const {
+		if (!source) return nullptr;
+		if (unit_is_ghost(source)) return get_tech_type(TechTypes::Personnel_Cloaking);
+		if (unit_is_wraith(source)) return get_tech_type(TechTypes::Cloaking_Field);
+		return nullptr;
+	}
+
+	bool live_command_can_cancel(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		if (!u_completed(source)) return true;
+		if (unit_is_researching(source) || unit_is_upgrading(source)) return true;
+		if (source->secondary_order_type &&
+		    source->secondary_order_type->id == Orders::BuildAddon &&
+		    source->current_build_unit &&
+		    !u_completed(source->current_build_unit)) return true;
+		if (source->order_type &&
+		    (source->order_type->id == Orders::ZergUnitMorph ||
+		     source->order_type->id == Orders::ZergBuildingMorph)) return true;
+		return !source->build_queue.empty();
+	}
+
+	bool live_command_can_burrow_toggle(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		const tech_type_t* burrow_tech = get_tech_type(TechTypes::Burrowing);
+		if (!unit_can_use_tech(source, burrow_tech, local_player_id)) return false;
+		if (u_burrowed(source)) return ut_can_burrow(source);
+		return true;
+	}
+
+	bool live_command_can_siege_toggle(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		if (!unit_is_sieged_tank(source) && !unit_is_unsieged_tank(source)) return false;
+		return unit_can_use_tech(source, get_tech_type(TechTypes::Tank_Siege_Mode), local_player_id);
+	}
+
+	bool live_command_can_cloak_toggle(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		const tech_type_t* tech = live_cloak_tech_for_unit(source);
+		if (!tech) return false;
+		if (!unit_can_use_tech(source, tech, local_player_id)) return false;
+		if (u_requires_detector(source)) return true;
+		return source->energy >= fp8::integer(tech->energy_cost);
+	}
+
+	bool live_command_can_return_cargo(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		const order_type_t* order = nullptr;
+		if (source->carrying_flags & 2) order = get_order_type(Orders::ReturnMinerals);
+		else if (source->carrying_flags & 1) order = get_order_type(Orders::ReturnGas);
+		if (!order) return false;
+		return unit_can_receive_order(source, order, local_player_id);
+	}
+
+	bool live_command_can_unload_all(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		if (loaded_units(source).empty()) return false;
+		return unit_can_receive_order(source, get_order_type(Orders::Unload), local_player_id);
+	}
+
+	bool execute_live_cancel_command() {
+		if (action_cancel_research(local_player_id)) return true;
+		if (action_cancel_upgrade(local_player_id)) return true;
+		if (action_cancel_addon(local_player_id)) return true;
+		if (action_cancel_build_queue(local_player_id, 254)) return true;
+		if (action_cancel_morph(local_player_id)) return true;
+		return action_cancel_building_unit(local_player_id);
+	}
+
+	bool execute_live_ability_command(live_command_kind_t kind, bool queue) {
+		unit_t* source = get_single_local_selected_unit();
+		if (!source) return false;
+		switch (kind) {
+		case live_command_kind_t::ability_cancel:
+			return execute_live_cancel_command();
+		case live_command_kind_t::ability_burrow_toggle:
+			if (u_burrowed(source)) return action_unburrow(local_player_id);
+			return action_burrow(local_player_id, queue);
+		case live_command_kind_t::ability_siege_toggle:
+			if (unit_is_sieged_tank(source)) return action_unsiege(local_player_id, queue);
+			return action_siege(local_player_id, queue);
+		case live_command_kind_t::ability_cloak_toggle:
+			if (u_requires_detector(source)) return action_decloak(local_player_id);
+			return action_cloak(local_player_id);
+		case live_command_kind_t::ability_return_cargo:
+			return action_return_cargo(local_player_id, queue);
+		case live_command_kind_t::ability_unload_all:
+			return action_unload_all(local_player_id, queue);
+		default:
+			return false;
+		}
+	}
+
+	bool issue_live_ability_hotkey(live_command_kind_t kind, bool queue) {
+		if (!is_live_game_mode || !has_local_player()) return false;
+		sync_action_selection_from_current();
+		if (action_st.selection.at(local_player_id).empty()) return false;
+		pending_order_mode = pending_order_mode_t::none;
+		cancel_live_build_placement();
+		bool ok = execute_live_ability_command(kind, queue);
+		if (ok) live_commands_dirty = true;
+		return ok;
 	}
 
 	void rebuild_live_commands() {
@@ -2036,6 +2175,21 @@ struct ui_functions: ui_util_functions {
 			cancel_live_build_placement();
 			return;
 		}
+
+		auto add_ability = [&](live_command_kind_t kind, bool enabled) {
+			if (!enabled) return;
+			if (live_commands.size() >= live_command_slots_n) return;
+			live_command_t cmd;
+			cmd.kind = kind;
+			live_commands.push_back(cmd);
+		};
+
+		add_ability(live_command_kind_t::ability_cancel, live_command_can_cancel(source));
+		add_ability(live_command_kind_t::ability_burrow_toggle, live_command_can_burrow_toggle(source));
+		add_ability(live_command_kind_t::ability_siege_toggle, live_command_can_siege_toggle(source));
+		add_ability(live_command_kind_t::ability_cloak_toggle, live_command_can_cloak_toggle(source));
+		add_ability(live_command_kind_t::ability_return_cargo, live_command_can_return_cargo(source));
+		add_ability(live_command_kind_t::ability_unload_all, live_command_can_unload_all(source));
 
 		for (const auto& v : game_st.unit_types.vec) {
 			const unit_type_t* unit_type = &v;
@@ -2203,6 +2357,15 @@ struct ui_functions: ui_util_functions {
 			break;
 		case live_command_kind_t::upgrade:
 			ok = action_upgrade(local_player_id, cmd.upgrade_type);
+			break;
+		case live_command_kind_t::ability_cancel:
+		case live_command_kind_t::ability_burrow_toggle:
+		case live_command_kind_t::ability_siege_toggle:
+		case live_command_kind_t::ability_cloak_toggle:
+		case live_command_kind_t::ability_return_cargo:
+		case live_command_kind_t::ability_unload_all:
+			cancel_live_build_placement();
+			ok = execute_live_ability_command(cmd.kind, false);
 			break;
 		case live_command_kind_t::build_place:
 			if (live_build_placement_armed &&
@@ -2499,6 +2662,18 @@ struct ui_functions: ui_util_functions {
 						} else if (e.sym == 'f') {
 							enforce_local_visibility = !enforce_local_visibility;
 							ui::log("single-player: fog of war %s\n", enforce_local_visibility ? "enabled" : "disabled");
+						} else if (e.sym == 'x') {
+							issue_live_ability_hotkey(live_command_kind_t::ability_cancel, shift);
+						} else if (e.sym == 'b') {
+							issue_live_ability_hotkey(live_command_kind_t::ability_burrow_toggle, shift);
+						} else if (e.sym == 'g') {
+							issue_live_ability_hotkey(live_command_kind_t::ability_siege_toggle, shift);
+						} else if (e.sym == 'c') {
+							issue_live_ability_hotkey(live_command_kind_t::ability_cloak_toggle, shift);
+						} else if (e.sym == 'r') {
+							issue_live_ability_hotkey(live_command_kind_t::ability_return_cargo, shift);
+						} else if (e.sym == 'l') {
+							issue_live_ability_hotkey(live_command_kind_t::ability_unload_all, shift);
 						} else if (e.sym >= '0' && e.sym <= '9') {
 							size_t group_n = e.sym == '0' ? 9 : (size_t)(e.sym - '1');
 							int subaction = ctrl ? 0 : (shift ? 2 : 1);

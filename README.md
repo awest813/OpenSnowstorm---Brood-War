@@ -136,10 +136,14 @@ Optional map-mode arguments:
 - `--local-race <zerg|terran|protoss|random>`
 - `--enemy-race <zerg|terran|protoss|random>`
 
+Notes:
+- `--game-type melee` keeps the quick skirmish setup path (requires two open/computer slots).
+- `--game-type ums` preserves map-authored slot topology; if `--local-player` is omitted, the first suitable active slot is chosen automatically.
+
 Controls in map mode:
 
 - **Left click/drag**: select units
-- **Left click command panel**: issue train/morph/research/upgrade commands
+- **Left click command panel**: issue train/morph/research/upgrade and context-sensitive tactical commands
 - **Left click map (while a building command is armed)**: place building
 - **Right click**: issue default order (or cancel armed building placement)
 - **Middle mouse drag**: move camera
@@ -147,6 +151,12 @@ Controls in map mode:
 - **H**: hold position
 - **A**: attack-move (applies to next right click)
 - **T**: patrol (applies to next right click)
+- **X**: cancel active production/research/morph when possible
+- **B**: burrow / unburrow (context-sensitive)
+- **G**: siege / unsiege (context-sensitive)
+- **C**: cloak / decloak (context-sensitive)
+- **R**: return carried cargo
+- **L**: unload all (transport)
 - **1–0**: recall control group
 - **Ctrl + 1–0**: set control group
 - **Shift + 1–0**: add to control group

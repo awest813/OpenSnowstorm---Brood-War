@@ -64,6 +64,8 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | Change | Files | What it enables |
 |---|---|---|
 | Replay seek-state bootstrap hardening | `ui/gfxtest.cpp` | Replay frame seeking now guarantees at least one snapshot before lookup, avoiding an empty-state dereference during early seek/rewind transitions. |
+| UMS slot-topology-preserving map startup | `ui/gfxtest.cpp` | `gfxtest --map --game-type ums` now preserves authored participant layout instead of forcing a strict two-slot open/computer conversion path; local and optional enemy slots are selected with mode-aware validation. |
+| Expanded local-command parity surface | `ui/ui.h`, `actions.h`, `ui/gfxtest.cpp`, `README.md` | Single-player map mode now exposes additional tactical actions (cancel, burrow toggle, siege toggle, cloak toggle, return cargo, unload all) via hotkeys and command panel entries; action success propagation for cloak/unload paths is now reported correctly to UI callers. |
 
 ## Campaign-readiness tracker (Phase 4 foundation)
 
