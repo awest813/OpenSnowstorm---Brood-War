@@ -1194,6 +1194,7 @@ static void print_usage(const char* argv0) {
 		"     [--game-type <melee|ums>] [--local-race <zerg|terran|protoss|random>]\n"
 		"     [--enemy-race <zerg|terran|protoss|random>] [--fog|--no-fog] [--headless]\n"
 		"     [--headless-map [<frame-limit>]]  (headless smoke test; default limit 72000)\n"
+		"     [--debug-overlay]  (show frame/fps/speed overlay on startup; also toggled by F3)\n"
 		"  %s --bench <frames> [--replay <file.rep>]\n"
 		"  %s --validate-replay [--replay <file.rep>]\n"
 		"  %s --record-hashes <fixture.txt> [--hash-interval <n>] [--replay <file.rep>]\n"
@@ -1214,6 +1215,7 @@ static void print_usage(const char* argv0) {
 		"  ctrl+<1-0> set group   shift+<1-0> add group   <1-0> recall group\n"
 		"  esc cancel armed building / landing / spell targeting\n"
 		"  f toggle fog of war\n"
+		"  F3 toggle debug overlay (frame counter, draw fps, game speed)\n"
 		"  space/p pause       u speed up                 z/d speed down\n"
 		"\n"
 		"spell targeting (command panel or ability hotkey arms a targeting mode):\n"
@@ -1456,6 +1458,7 @@ int main(int argc, char** argv) {
 	bool headless = false;
 	bool show_help = false;
 	bool game_type_melee = true;
+	bool debug_overlay = false;
 	bool map_fog_of_war = true;
 	int local_player_slot = -1;
 	int enemy_player_slot = -1;
@@ -1537,6 +1540,8 @@ int main(int argc, char** argv) {
 			map_fog_of_war = true;
 		} else if (strcmp(argv[i], "--no-fog") == 0) {
 			map_fog_of_war = false;
+		} else if (strcmp(argv[i], "--debug-overlay") == 0) {
+			debug_overlay = true;
 		} else if (strcmp(argv[i], "--validate-replay") == 0) {
 			validate_replay = true;
 		} else if (strcmp(argv[i], "--verify-hashes") == 0) {
@@ -1927,6 +1932,7 @@ int main(int argc, char** argv) {
 	ui.screen_pos = {(int)ui.game_st.map_width / 2 - (int)screen_width / 2, (int)ui.game_st.map_height / 2 - (int)screen_height / 2};
 
 	ui.set_image_data();
+	ui.show_debug_overlay = debug_overlay;
 
 	log("loaded in %dms\n", std::chrono::duration_cast<std::chrono::milliseconds>(clock.now() - start).count());
 

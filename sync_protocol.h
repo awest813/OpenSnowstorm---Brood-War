@@ -34,6 +34,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstdio>
+#include <array>
 
 namespace bwgame {
 
@@ -111,13 +112,41 @@ enum {
 //   client_local_id     – internal client ID of the diverging peer (-1 if
 //                         unknown, e.g. when the report is self-generated).
 //   client_player_slot  – BW player-slot index of the peer (-1 if unknown).
+//   recent_actions      – ring buffer of the last up-to-16 actions executed
+//                         locally before the mismatch was detected; most-
+//                         recent entry is at index (recent_actions_tail - 1)
+//                         wrapping around recent_actions_capacity.
+
+struct recent_action_entry {
+	int frame = -1;
+	int owner = -1;
+	uint8_t action_id = 0;
+};
+
 struct desync_report {
+	static constexpr size_t recent_actions_capacity = 16;
+
 	int local_frame = -1;
 	uint8_t hash_index = 0;
 	uint32_t expected_hash = 0;
 	uint32_t received_hash = 0;
 	int client_local_id = -1;
 	int client_player_slot = -1;
+
+	// Ring-buffer of the most recent actions executed locally.
+	// recent_actions_count  – how many valid entries are present (0-16).
+	// recent_actions_tail   – index of the next slot to write (newest entry
+	//                         is at [(tail - 1 + capacity) % capacity]).
+	std::array<recent_action_entry, recent_actions_capacity> recent_actions{};
+	size_t recent_actions_count = 0;
+	size_t recent_actions_tail = 0;
+
+	// Push one action entry into the ring buffer.
+	void push_recent_action(int frame, int owner, uint8_t action_id) {
+		recent_actions[recent_actions_tail] = {frame, owner, action_id};
+		recent_actions_tail = (recent_actions_tail + 1) % recent_actions_capacity;
+		if (recent_actions_count < recent_actions_capacity) ++recent_actions_count;
+	}
 };
 
 // ---------------------------------------------------------------------------
@@ -137,6 +166,8 @@ struct desync_report {
 //     received_hash      : 0x<hex>
 //     client_local_id    : <id>
 //     client_player_slot : <slot>
+//     recent_actions     : <count> entries (oldest first)
+//       [i] frame=<f> owner=<p> action=0x<id>
 //
 // Returns the number of reports written (0 if the vector is empty).
 inline int write_desync_reports(
@@ -163,6 +194,22 @@ inline int write_desync_reports(
 			(unsigned)r.received_hash,
 			r.client_local_id,
 			r.client_player_slot);
+
+		// Emit the recent-action history (oldest first).
+		fprintf(sink, "  recent_actions     : %zu entries (oldest first)\n",
+			r.recent_actions_count);
+		if (r.recent_actions_count > 0) {
+			// The ring buffer tail points to the next-write slot; walk
+			// backwards from tail to recover entries in oldest-first order.
+			size_t cap = desync_report::recent_actions_capacity;
+			size_t oldest = (r.recent_actions_tail + cap - r.recent_actions_count) % cap;
+			for (size_t j = 0; j < r.recent_actions_count; ++j) {
+				size_t idx = (oldest + j) % cap;
+				const recent_action_entry& a = r.recent_actions[idx];
+				fprintf(sink, "    [%zu] frame=%d owner=%d action=0x%02x\n",
+					j, a.frame, a.owner, (unsigned)a.action_id);
+			}
+		}
 	}
 	fflush(sink);
 	return (int)count;

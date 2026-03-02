@@ -111,6 +111,12 @@ struct sync_state {
 	std::array<uint32_t, 4> insync_hash{};
 	uint8_t insync_hash_index = 0;
 
+	// Rolling ring buffer of recently executed actions, used to populate
+	// desync_report::recent_actions when a hash mismatch is detected.
+	std::array<recent_action_entry, desync_report::recent_actions_capacity> recent_action_ring{};
+	size_t recent_action_ring_count = 0;
+	size_t recent_action_ring_tail = 0;
+
 	a_vector<desync_report> desync_reports;
 	bool desync_detected = false;
 };
@@ -172,6 +178,19 @@ struct sync_functions: action_functions {
 	explicit sync_functions(state& st, action_state& action_st, sync_state& sync_st) : action_functions(st, action_st), sync_st(sync_st) {}
 
 	std::function<void(int player_slot, data_loading::data_reader_le&)> on_custom_action;
+
+	// Override the action_functions hook to maintain the recent-action ring
+	// buffer in sync_state; this buffer is snapshotted into desync_report
+	// when a hash mismatch is detected.
+	virtual void on_action(int owner, int action_id) override {
+		auto& ring = sync_st.recent_action_ring;
+		auto& tail = sync_st.recent_action_ring_tail;
+		auto& count = sync_st.recent_action_ring_count;
+		constexpr size_t cap = desync_report::recent_actions_capacity;
+		ring[tail] = {st.current_frame, owner, (uint8_t)(unsigned)action_id};
+		tail = (tail + 1) % cap;
+		if (count < cap) ++count;
+	}
 
 	template<typename action_F>
 	void execute_scheduled_actions(action_F&& action_f) {
@@ -784,15 +803,20 @@ struct sync_functions: action_functions {
 								case sync_messages::id_insync_check: {
 								uint8_t index = r.template get<uint8_t>();
 								uint32_t hash = r.template get<uint32_t>();
-								if (hash != sync_st.insync_hash.at(index)) {
-									desync_report report;
-									report.local_frame = st.current_frame;
-									report.hash_index = index;
-									report.expected_hash = sync_st.insync_hash.at(index);
-									report.received_hash = hash;
-									report.client_local_id = client->local_id;
-									report.client_player_slot = client->player_slot;
-									sync_st.desync_reports.push_back(report);
+							if (hash != sync_st.insync_hash.at(index)) {
+								desync_report report;
+								report.local_frame = st.current_frame;
+								report.hash_index = index;
+								report.expected_hash = sync_st.insync_hash.at(index);
+								report.received_hash = hash;
+								report.client_local_id = client->local_id;
+								report.client_player_slot = client->player_slot;
+								// Snapshot the recent-action ring buffer so the report
+								// carries enough context to triage the divergence.
+								report.recent_actions = sync_st.recent_action_ring;
+								report.recent_actions_count = sync_st.recent_action_ring_count;
+								report.recent_actions_tail  = sync_st.recent_action_ring_tail;
+								sync_st.desync_reports.push_back(report);
 									sync_st.desync_detected = true;
 									// Emit a structured diagnostic to stderr so CI logs
 									// and crash reports capture the divergence context.
