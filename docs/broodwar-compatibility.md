@@ -23,6 +23,11 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | Replay format compatibility | Durable replay I/O is required for regression and tooling interoperability. | **In progress** | Continue format validation + metadata/versioning work tied to replay reader/writer updates. |
 | Multiplayer sync behavior | Action scheduling and frame stepping must stay BWAPI-compatible. | **Partially validated** | Add focused tests around latency-buffer and first-frame behavior invariants. |
 
+## Current phase focus
+
+- **Phase 1** established protocol/constants decomposition foundations (`sync_protocol.h`, `simulation_constants.h`).
+- **Phase 2 kickoff** is now tracked in `phase-2-kickoff.md` with concrete sync/replay reliability slices and exit criteria.
+
 ## Immediate backlog (starter slice)
 
 1. Add a small set of deterministic replay fixtures that exercise high-risk command and combat cases.

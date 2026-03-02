@@ -4,6 +4,7 @@
 - **Architecture map / module boundaries**: `architecture.md`
 - **Modernization plan (detailed)**: `modernization-roadmap.md`
 - **Phase 1 notes**: `phase-1-kickoff.md`
+- **Phase 2 notes**: `phase-2-kickoff.md`
 
 Project-level docs live at the repo root:
 
@@ -14,4 +15,3 @@ Project-level docs live at the repo root:
 - `../SECURITY.md`
 - `../LICENSE`
 - `../THIRD_PARTY_NOTICES.md`
-

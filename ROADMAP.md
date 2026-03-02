@@ -7,6 +7,7 @@ For deeper technical breakdowns, see:
 - `docs/modernization-roadmap.md` (detailed phased plan)
 - `docs/architecture.md` (module map / ownership model)
 - `docs/phase-1-kickoff.md` (active decomposition notes)
+- `docs/phase-2-kickoff.md` (active sync/replay reliability slice)
 - `docs/broodwar-compatibility.md` (compatibility matrix + validation backlog)
 
 ---
@@ -73,4 +74,3 @@ For deeper technical breakdowns, see:
 
 - Bundle Blizzard assets or ship proprietary game content
 - Do a “big rewrite” that breaks determinism and compatibility in exchange for aesthetics
-
