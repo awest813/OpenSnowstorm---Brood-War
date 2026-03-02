@@ -746,6 +746,28 @@ struct action_functions: state_functions {
 		return retval;
 	}
 
+	bool action_patrol(int owner, xy pos, bool queue) {
+		if (!is_in_map_bounds(pos)) return false;
+		group_move_t g;
+		bool has_calculated_group_move = false;
+		bool retval = false;
+		for (unit_t* u : selected_units(owner)) {
+			const order_type_t* order = get_order_type(Orders::Patrol);
+			if (!unit_can_receive_order(u, order, owner)) continue;
+			order_target_t order_target;
+			order_target.position = pos;
+			if (!has_calculated_group_move) {
+				has_calculated_group_move = true;
+				calc_group_move(g, owner, pos, true);
+			}
+			order_target.position = get_group_move_pos(u, pos, g);
+			issue_order(u, queue, order, order_target);
+			u->user_action_flags |= 2;
+			retval = true;
+		}
+		return retval;
+	}
+
 	bool action_return_cargo(int owner, bool queue) {
 		bool retval = false;
 		for (unit_t* u : selected_units(owner)) {
@@ -866,6 +888,17 @@ struct action_functions: state_functions {
 			retval = true;
 		}
 		return retval;
+	}
+
+	bool action_land(int owner, xy pos, const unit_type_t* unit_type) {
+		if (!is_in_map_bounds(pos)) return false;
+		unit_t* u = get_single_selected_unit(owner);
+		if (!u) return false;
+		if (!unit_can_receive_order(u, get_order_type(Orders::BuildingLand), owner)) return false;
+		xy land_pos(int(32 * (pos.x / 32)) + unit_type->placement_size.x / 2,
+		            int(32 * (pos.y / 32)) + unit_type->placement_size.y / 2);
+		set_unit_order(u, get_order_type(Orders::BuildingLand), land_pos);
+		return true;
 	}
 
 	bool action_morph(int owner, const unit_type_t* unit_type) {
@@ -1172,6 +1205,16 @@ struct action_functions: state_functions {
 	}
 
 	template<typename reader_T>
+	bool read_action_patrol(int owner, reader_T&& r) {
+		int x = r.template get<int16_t>();
+		int y = r.template get<int16_t>();
+		r.template get<uint16_t>(); // target unit (unused for patrol)
+		r.template get<uint16_t>(); // target unit type (unused)
+		bool queue = r.template get<uint8_t>() != 0;
+		return action_patrol(owner, {x, y}, queue);
+	}
+
+	template<typename reader_T>
 	bool read_action_return_cargo(int owner, reader_T&& r) {
 		bool queue = r.template get<uint8_t>() != 0;
 		return action_return_cargo(owner, queue);
@@ -1232,6 +1275,14 @@ struct action_functions: state_functions {
 		r.template get<uint16_t>();
 		r.template get<uint16_t>();
 		return true;
+	}
+
+	template<typename reader_T>
+	bool read_action_land(int owner, reader_T&& r) {
+		int x = r.template get<int16_t>();
+		int y = r.template get<int16_t>();
+		auto* unit_type = get_unit_type((UnitTypes)r.template get<uint16_t>());
+		return action_land(owner, {x, y}, unit_type);
 	}
 
 	template<typename reader_T>
@@ -1379,6 +1430,8 @@ struct action_functions: state_functions {
 			return read_action_carrier_stop(owner, r);
 		case 28:
 			return read_action_reaver_stop(owner, r);
+		case 29:
+			return read_action_patrol(owner, r);
 		case 30:
 			return read_action_return_cargo(owner, r);
 		case 31:
@@ -1391,6 +1444,8 @@ struct action_functions: state_functions {
 			return read_action_decloak(owner, r);
 		case 35:
 			return read_action_morph(owner, r);
+		case 36:
+			return read_action_land(owner, r);
 		case 37:
 			return read_action_unsiege(owner, r);
 		case 38:

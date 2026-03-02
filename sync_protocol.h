@@ -31,7 +31,20 @@
 //   id_remove_unit    (11) – debug/cheat: remove a unit
 //   id_custom_action  (12) – arbitrary action payload (BWAPI / bot use)
 
+#include <cstdint>
+#include <cstddef>
+
 namespace bwgame {
+
+// Protocol version.
+//
+// Bump this when wire-incompatible changes are made to sync message
+// semantics or layout.  Peers should compare versions during handshake
+// to detect incompatible builds before gameplay begins.
+//
+// Version history:
+//   1 – initial versioned protocol (Phase 2 BW compatibility overhaul)
+static constexpr uint32_t sync_protocol_version = 1;
 
 namespace sync_messages {
 
@@ -59,6 +72,20 @@ enum {
 };
 
 } // namespace sync_messages
+
+// Structured desync report emitted on first divergence detection.
+//
+// When an insync hash mismatch is detected, a desync_report captures the
+// diagnostic context at the point of divergence.  Consumers (logs, CI
+// harnesses, replay tools) can inspect this to narrow down the cause.
+struct desync_report {
+	int local_frame = -1;
+	uint8_t hash_index = 0;
+	uint32_t expected_hash = 0;
+	uint32_t received_hash = 0;
+	int client_local_id = -1;
+	int client_player_slot = -1;
+};
 
 } // namespace bwgame
 

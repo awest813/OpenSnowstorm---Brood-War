@@ -280,6 +280,7 @@ struct tech_type_t {
 	int label;
 	int race;
 	int flags;
+	bool is_broodwar;
 };
 
 using tech_types_t = type_container<tech_type_t>;

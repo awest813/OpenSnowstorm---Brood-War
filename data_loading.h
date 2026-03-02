@@ -1620,6 +1620,10 @@ tech_types_t load_techdata_dat(const data_T& data) {
 	rawr(uint8_t, race, count);
 	rawr(uint16_t, flags, count);
 
+	for (size_t i = 0; i < count; ++i) {
+		arr[i].is_broodwar = (i >= 24);
+	}
+
 	if (r.left()) error("%s: %d bytes left (incorrect version?)\n", "techdata.dat", r.left());
 
 	return tech_types;
