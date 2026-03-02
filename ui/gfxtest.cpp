@@ -1185,7 +1185,7 @@ static void print_usage(const char* argv0) {
 		"  %s [--replay <file.rep>] [--headless]\n"
 		"  %s --map <file.scx|file.scm> [--local-player <0-7>] [--enemy-player <0-7>]\n"
 		"     [--game-type <melee|ums>] [--local-race <zerg|terran|protoss|random>]\n"
-		"     [--enemy-race <zerg|terran|protoss|random>] [--headless]\n"
+		"     [--enemy-race <zerg|terran|protoss|random>] [--fog|--no-fog] [--headless]\n"
 		"  %s --bench <frames> [--replay <file.rep>]\n"
 		"  %s --validate-replay [--replay <file.rep>]\n"
 		"  %s --record-hashes <fixture.txt> [--hash-interval <n>] [--replay <file.rep>]\n"
@@ -1199,6 +1199,7 @@ static void print_usage(const char* argv0) {
 		"  t patrol (next right click)\n"
 		"  ctrl+<1-0> set group   shift+<1-0> add group   <1-0> recall group\n"
 		"  esc cancel armed building placement\n"
+		"  f toggle fog of war\n"
 		"  space/p pause       u speed up                 z/d speed down\n",
 		argv0, argv0, argv0, argv0, argv0, argv0);
 }
@@ -1244,6 +1245,7 @@ int main(int argc, char** argv) {
 	bool headless = false;
 	bool show_help = false;
 	bool game_type_melee = true;
+	bool map_fog_of_war = true;
 	int local_player_slot = -1;
 	int enemy_player_slot = -1;
 	int local_race = 5;
@@ -1317,6 +1319,10 @@ int main(int argc, char** argv) {
 				log("error: %s\n", e.what());
 				return 2;
 			}
+		} else if (strcmp(argv[i], "--fog") == 0) {
+			map_fog_of_war = true;
+		} else if (strcmp(argv[i], "--no-fog") == 0) {
+			map_fog_of_war = false;
 		} else if (strcmp(argv[i], "--validate-replay") == 0) {
 			validate_replay = true;
 		} else if (strcmp(argv[i], "--verify-hashes") == 0) {
@@ -1405,7 +1411,7 @@ int main(int argc, char** argv) {
 		log("error: --map and --record-hashes cannot be used together\n");
 		return 2;
 	}
-	if ((local_player_slot != -1 || enemy_player_slot != -1 || local_race != 5 || enemy_race != 5 || !game_type_melee) && !map_file) {
+	if ((local_player_slot != -1 || enemy_player_slot != -1 || local_race != 5 || enemy_race != 5 || !game_type_melee || !map_fog_of_war) && !map_file) {
 		log("error: --map is required when using single-player map options\n");
 		return 2;
 	}
@@ -1460,7 +1466,8 @@ int main(int argc, char** argv) {
 	if (map_file) {
 		ui.is_replay_mode = false;
 		ui.is_live_game_mode = true;
-		ui.enforce_local_visibility = true;
+		ui.default_enforce_local_visibility = map_fog_of_war;
+		ui.enforce_local_visibility = map_fog_of_war;
 
 		int selected_local = -1;
 		int selected_enemy = -1;
@@ -1535,14 +1542,16 @@ int main(int argc, char** argv) {
 		ui.local_player_id = selected_local;
 		ui.enemy_player_id = selected_enemy;
 		ui.replay_frame = ui.st.current_frame;
-		log("single-player: map='%s' local_slot=%d enemy_slot=%d mode=%s\n",
+		log("single-player: map='%s' local_slot=%d enemy_slot=%d mode=%s fog=%s\n",
 			map_file,
 			selected_local,
 			selected_enemy,
-			game_type_melee ? "melee" : "ums");
+			game_type_melee ? "melee" : "ums",
+			map_fog_of_war ? "on" : "off");
 	} else {
 		ui.is_replay_mode = true;
 		ui.is_live_game_mode = false;
+		ui.default_enforce_local_visibility = false;
 		ui.enforce_local_visibility = false;
 		ui.local_player_id = -1;
 		ui.enemy_player_id = -1;
