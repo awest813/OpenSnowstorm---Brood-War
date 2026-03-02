@@ -51,6 +51,13 @@ Two parallel streams are active:
 | `read_action_skip<N>` helper template | `actions.h` | Zero-simulation skip for replay-observer-only actions with known payload sizes. |
 | Actions 55–58, 60–62, 70–71, 89, 91 | `actions.h` | Save game, load game, restart, game-speed change, pause, resume, vision-toggle, allied-victory, and BW replay markers are now consumed without error. |
 
+### Post-kickoff progress (next slice landed)
+
+| Change | Files | What it enables |
+|---|---|---|
+| Replay hash fixture generation | `ui/gfxtest.cpp` | `--record-hashes <fixture>` records deterministic frame checkpoints at configurable intervals (`--hash-interval`, default `240`). |
+| Replay hash fixture verification | `ui/gfxtest.cpp` | `--verify-hashes <fixture>` asserts replay checkpoints against golden hashes and returns non-zero on mismatch. |
+
 ---
 
 ## Exit criteria for Phase 3 kickoff
@@ -83,9 +90,9 @@ automatically.
 
 ## Next slices
 
-1. **Replay fixture with frame-hash checkpoints** – commit `maps/test.rep`,
-   record golden hashes at N-frame intervals, add a `--verify-hashes` mode to
-   `gfxtest` that asserts against them.
+1. **Replay fixture artifact in repo + CI wiring** – commit `maps/test.rep`
+   and `maps/test.hashes`, then enable CI to run `--verify-hashes` as a
+   compatibility gate.
 2. **Desync history in reports** – extend `desync_report` with a short ring
    buffer of recent action IDs for each player, surfaced in `write_desync_reports`.
 3. **Platform window abstraction** – define a narrow `platform_window` interface

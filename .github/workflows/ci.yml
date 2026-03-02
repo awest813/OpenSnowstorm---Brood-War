@@ -85,9 +85,9 @@ jobs:
         run: cmake --build build-no-ui --parallel $(nproc)
 
   # ---------------------------------------------------------------------------
-  # Replay validation gate.
-  # Runs only when a test replay is present in the repository.
-  # Add a small deterministic replay to maps/test.rep to enable this job.
+  # Replay compatibility gate.
+  # Runs only when deterministic replay fixtures are present.
+  # Add maps/test.rep + maps/test.hashes to enable this job.
   # ---------------------------------------------------------------------------
   validate-replay:
     name: Validate replay (compatibility gate)
@@ -109,5 +109,7 @@ jobs:
           cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel $(nproc)
 
-      - name: Run replay validation
-        run: ./build/gfxtest --validate-replay --replay maps/test.rep
+      - name: Run replay validation + hash verification
+        run: |
+          ./build/gfxtest --validate-replay --replay maps/test.rep
+          ./build/gfxtest --verify-hashes maps/test.hashes --replay maps/test.rep

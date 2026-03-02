@@ -13,6 +13,12 @@
 #include <cstring>
 #include <cstdlib>
 #include <exception>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <cctype>
+#include <cerrno>
 #include <limits>
 
 #include "../perf_metrics.h"
@@ -633,6 +639,16 @@ extern "C" void load_replay(const uint8_t* data, size_t len) {
 // reflects pure simulation cost.
 // ---------------------------------------------------------------------------
 #ifndef EMSCRIPTEN
+struct replay_hash_checkpoint {
+	int frame = 0;
+	uint32_t hash = 0;
+};
+
+struct replay_hash_fixture {
+	std::string replay_file;
+	std::vector<replay_hash_checkpoint> checkpoints;
+};
+
 struct replay_validation_report {
 	a_string map_name;
 	int end_frame = 0;
@@ -643,6 +659,186 @@ struct replay_validation_report {
 	int last_action_frame = -1;
 	int stepped_frames = 0;
 };
+
+static std::string trim_ascii_copy(const std::string& s) {
+	size_t begin = 0;
+	while (begin < s.size() && std::isspace((unsigned char)s[begin])) ++begin;
+	size_t end = s.size();
+	while (end > begin && std::isspace((unsigned char)s[end - 1])) --end;
+	return s.substr(begin, end - begin);
+}
+
+static int parse_fixture_int_or_throw(
+	const char* fixture_file,
+	int line_no,
+	const char* field_name,
+	const std::string& token) {
+	errno = 0;
+	char* end = nullptr;
+	long long v = std::strtoll(token.c_str(), &end, 0);
+	if (errno != 0 || end == token.c_str() || *end != '\0' ||
+		v < std::numeric_limits<int>::min() ||
+		v > std::numeric_limits<int>::max()) {
+		error("verify_hashes: %s:%d invalid %s '%s'",
+			fixture_file, line_no, field_name, token.c_str());
+	}
+	return (int)v;
+}
+
+static uint32_t parse_fixture_u32_or_throw(
+	const char* fixture_file,
+	int line_no,
+	const char* field_name,
+	const std::string& token) {
+	errno = 0;
+	char* end = nullptr;
+	unsigned long long v = std::strtoull(token.c_str(), &end, 0);
+	if (errno != 0 || end == token.c_str() || *end != '\0' ||
+		v > std::numeric_limits<uint32_t>::max()) {
+		error("verify_hashes: %s:%d invalid %s '%s'",
+			fixture_file, line_no, field_name, token.c_str());
+	}
+	return (uint32_t)v;
+}
+
+static replay_hash_fixture load_hash_fixture_or_throw(const char* fixture_file) {
+	std::ifstream in(fixture_file, std::ios::in);
+	if (!in) {
+		error("verify_hashes: unable to open fixture '%s': %s",
+			fixture_file, std::strerror(errno));
+	}
+
+	replay_hash_fixture fixture;
+	std::string line;
+	int line_no = 0;
+	int prev_frame = -1;
+	while (std::getline(in, line)) {
+		++line_no;
+		std::string t = trim_ascii_copy(line);
+		if (t.empty() || t[0] == '#') continue;
+
+		if (t.compare(0, 7, "replay:") == 0) {
+			std::string replay_file = trim_ascii_copy(t.substr(7));
+			if (replay_file.empty()) {
+				error("verify_hashes: %s:%d missing replay path after 'replay:'",
+					fixture_file, line_no);
+			}
+			fixture.replay_file = replay_file;
+			continue;
+		}
+
+		std::istringstream iss(t);
+		std::string frame_token;
+		std::string hash_token;
+		std::string extra_token;
+		if (!(iss >> frame_token >> hash_token) || (iss >> extra_token)) {
+			error("verify_hashes: %s:%d expected '<frame> <hash>' or 'replay: <path>'",
+				fixture_file, line_no);
+		}
+
+		int frame = parse_fixture_int_or_throw(fixture_file, line_no, "frame", frame_token);
+		if (frame < 0) {
+			error("verify_hashes: %s:%d frame must be >= 0, got %d",
+				fixture_file, line_no, frame);
+		}
+		if (!fixture.checkpoints.empty() && frame <= prev_frame) {
+			error("verify_hashes: %s:%d frame %d is not strictly increasing (previous %d)",
+				fixture_file, line_no, frame, prev_frame);
+		}
+
+		replay_hash_checkpoint cp;
+		cp.frame = frame;
+		cp.hash = parse_fixture_u32_or_throw(fixture_file, line_no, "hash", hash_token);
+		fixture.checkpoints.push_back(cp);
+		prev_frame = frame;
+	}
+
+	if (!in.eof()) {
+		error("verify_hashes: failed while reading fixture '%s'", fixture_file);
+	}
+	if (fixture.checkpoints.empty()) {
+		error("verify_hashes: fixture '%s' contains no checkpoints", fixture_file);
+	}
+
+	return fixture;
+}
+
+static uint32_t compute_replay_checkpoint_hash(const replay_player& player) {
+	const state& st = player.st();
+	const action_state& action_st = player.action_st;
+
+	uint32_t hash = 2166136261u;
+	auto add = [&](auto v) {
+		hash ^= (uint32_t)v;
+		hash *= 16777619u;
+	};
+
+	// Keep this aligned with sync-side insync hashing, plus replay-specific
+	// action stream cursor fields for fixture verification.
+	add(st.current_frame);
+	add(action_st.actions_data_position);
+	add(action_st.next_action_frame);
+	add(st.lcg_rand_state);
+	for (auto v : st.current_minerals) add(v);
+	for (auto v : st.current_gas) add(v);
+	for (auto v : st.total_minerals_gathered) add(v);
+	for (auto v : st.total_gas_gathered) add(v);
+	add(st.active_orders_size);
+	add(st.active_bullets_size);
+	add(st.active_thingies_size);
+	for (const unit_t* u : ptr(st.visible_units)) {
+		add((u->shield_points + u->hp).raw_value);
+		add(u->exact_position.x.raw_value);
+		add(u->exact_position.y.raw_value);
+		add(u->owner);
+		add((int)u->order_type->id);
+	}
+
+	return hash;
+}
+
+static std::vector<replay_hash_checkpoint> sample_replay_hashes_or_throw(
+	const char* replay_file,
+	int hash_interval,
+	a_string* map_name,
+	int* end_frame) {
+	if (hash_interval <= 0) {
+		error("record_hashes: hash interval must be > 0, got %d", hash_interval);
+	}
+
+	auto load_data_file = data_loading::data_files_directory("");
+
+	replay_player player;
+	player.init(load_data_file);
+	player.load_replay_file(replay_file);
+
+	if (map_name) *map_name = player.replay_st.map_name;
+	if (end_frame) *end_frame = player.replay_st.end_frame;
+
+	std::vector<replay_hash_checkpoint> checkpoints;
+	int last_recorded_frame = -1;
+	while (true) {
+		int frame = player.st().current_frame;
+		bool should_record = frame == 0 || frame % hash_interval == 0 || player.is_done();
+		if (should_record && frame != last_recorded_frame) {
+			replay_hash_checkpoint cp;
+			cp.frame = frame;
+			cp.hash = compute_replay_checkpoint_hash(player);
+			checkpoints.push_back(cp);
+			last_recorded_frame = frame;
+		}
+		if (player.is_done()) break;
+		player.next_frame();
+	}
+
+	if (player.action_st.actions_data_position != player.replay_st.actions_data_buffer.size()) {
+		error("record_hashes: consumed %lld/%lld action bytes during playback",
+			(long long)player.action_st.actions_data_position,
+			(long long)player.replay_st.actions_data_buffer.size());
+	}
+
+	return checkpoints;
+}
 
 static replay_validation_report validate_replay_or_throw(const char* replay_file) {
 	using namespace bwgame;
@@ -751,6 +947,157 @@ static int run_validate_replay(const char* replay_file) {
 	}
 }
 
+static int run_record_hashes(const char* replay_file, const char* fixture_file, int hash_interval) {
+	using namespace bwgame;
+
+	if (!fixture_file || fixture_file[0] == '\0') {
+		log("record-hashes: FAIL (missing fixture output path)\n");
+		return 2;
+	}
+
+	const char* rep = replay_file ? replay_file : "maps/p49.rep";
+	log("record-hashes: replay '%s' -> fixture '%s' (interval=%d)\n",
+		rep, fixture_file, hash_interval);
+
+	try {
+		a_string map_name;
+		int end_frame = 0;
+		auto checkpoints = sample_replay_hashes_or_throw(rep, hash_interval, &map_name, &end_frame);
+
+		std::ofstream out(fixture_file, std::ios::out | std::ios::trunc);
+		if (!out) {
+			error("record_hashes: unable to open fixture '%s' for writing: %s",
+				fixture_file, std::strerror(errno));
+		}
+
+		out << "# OpenSnowstorm replay hash fixture v1\n";
+		out << "# Generated by gfxtest --record-hashes\n";
+		out << "replay: " << rep << "\n";
+		out << "# frame hash\n";
+		for (const auto& cp : checkpoints) {
+			out << format("%d 0x%08x\n", cp.frame, cp.hash);
+		}
+		if (!out) {
+			error("record_hashes: failed while writing fixture '%s'", fixture_file);
+		}
+
+		const char* map_name_str = map_name.empty() ? "<unknown>" : map_name.c_str();
+		log("record-hashes: PASS\n"
+			"  map         : %s\n"
+			"  end frame   : %d\n"
+			"  checkpoints : %lld\n",
+			map_name_str,
+			end_frame,
+			(long long)checkpoints.size());
+		return 0;
+	} catch (const exception& e) {
+		log("record-hashes: FAIL (%s)\n", e.what());
+		return 1;
+	} catch (const std::exception& e) {
+		log("record-hashes: FAIL (%s)\n", e.what());
+		return 1;
+	} catch (...) {
+		log("record-hashes: FAIL (unknown exception)\n");
+		return 1;
+	}
+}
+
+static int run_verify_hashes(const char* replay_file, const char* fixture_file) {
+	using namespace bwgame;
+
+	if (!fixture_file || fixture_file[0] == '\0') {
+		log("verify-hashes: FAIL (missing fixture path)\n");
+		return 2;
+	}
+
+	try {
+		replay_hash_fixture fixture = load_hash_fixture_or_throw(fixture_file);
+		const char* rep = replay_file ? replay_file :
+			(!fixture.replay_file.empty() ? fixture.replay_file.c_str() : "maps/p49.rep");
+
+		log("verify-hashes: replay '%s' against fixture '%s'\n", rep, fixture_file);
+
+		auto load_data_file = data_loading::data_files_directory("");
+
+		replay_player player;
+		player.init(load_data_file);
+		player.load_replay_file(rep);
+
+		if (fixture.checkpoints.back().frame > player.replay_st.end_frame) {
+			error("verify_hashes: fixture frame %d exceeds replay end frame %d",
+				fixture.checkpoints.back().frame,
+				player.replay_st.end_frame);
+		}
+
+		size_t next_checkpoint = 0;
+		size_t mismatch_count = 0;
+		size_t printed_mismatches = 0;
+		const size_t max_mismatch_logs = 20;
+		while (next_checkpoint < fixture.checkpoints.size()) {
+			const auto& cp = fixture.checkpoints[next_checkpoint];
+			while (player.st().current_frame < cp.frame && !player.is_done()) {
+				player.next_frame();
+			}
+			if (player.st().current_frame != cp.frame) {
+				error("verify_hashes: checkpoint frame %d is unreachable (replay stopped at frame %d)",
+					cp.frame,
+					player.st().current_frame);
+			}
+
+			uint32_t got = compute_replay_checkpoint_hash(player);
+			if (got != cp.hash) {
+				++mismatch_count;
+				if (printed_mismatches < max_mismatch_logs) {
+					log("verify-hashes: mismatch frame %d expected=0x%08x got=0x%08x\n",
+						cp.frame, cp.hash, got);
+					++printed_mismatches;
+				}
+			}
+			++next_checkpoint;
+		}
+
+		while (!player.is_done()) {
+			player.next_frame();
+		}
+
+		if (player.action_st.actions_data_position != player.replay_st.actions_data_buffer.size()) {
+			error("verify_hashes: consumed %lld/%lld action bytes during playback",
+				(long long)player.action_st.actions_data_position,
+				(long long)player.replay_st.actions_data_buffer.size());
+		}
+
+		if (mismatch_count != 0) {
+			if (mismatch_count > printed_mismatches) {
+				log("verify-hashes: ... %lld additional mismatches omitted\n",
+					(long long)(mismatch_count - printed_mismatches));
+			}
+			log("verify-hashes: FAIL (%lld/%lld checkpoints mismatched)\n",
+				(long long)mismatch_count,
+				(long long)fixture.checkpoints.size());
+			return 1;
+		}
+
+		const char* map_name = player.replay_st.map_name.empty() ? "<unknown>" : player.replay_st.map_name.c_str();
+		log("verify-hashes: PASS\n"
+			"  map         : %s\n"
+			"  end frame   : %d\n"
+			"  checkpoints : %lld\n",
+			map_name,
+			player.replay_st.end_frame,
+			(long long)fixture.checkpoints.size());
+		return 0;
+	} catch (const exception& e) {
+		log("verify-hashes: FAIL (%s)\n", e.what());
+		return 1;
+	} catch (const std::exception& e) {
+		log("verify-hashes: FAIL (%s)\n", e.what());
+		return 1;
+	} catch (...) {
+		log("verify-hashes: FAIL (unknown exception)\n");
+		return 1;
+	}
+}
+
 static int run_bench(int bench_frames, const char* replay_file) {
 	using namespace bwgame;
 
@@ -807,6 +1154,9 @@ int main(int argc, char** argv) {
 	// Argument parsing
 	const char* replay_file = nullptr;
 	int bench_frames = 0;
+	const char* verify_hashes_file = nullptr;
+	const char* record_hashes_file = nullptr;
+	int hash_interval = 240;
 	bool validate_replay = false;
 	bool headless = false;
 
@@ -815,6 +1165,31 @@ int main(int argc, char** argv) {
 			bench_frames = atoi(argv[++i]);
 		} else if (strcmp(argv[i], "--validate-replay") == 0) {
 			validate_replay = true;
+		} else if (strcmp(argv[i], "--verify-hashes") == 0) {
+			if (i + 1 >= argc) {
+				log("error: --verify-hashes requires a fixture file path\n");
+				return 2;
+			}
+			verify_hashes_file = argv[++i];
+		} else if (strcmp(argv[i], "--record-hashes") == 0) {
+			if (i + 1 >= argc) {
+				log("error: --record-hashes requires an output fixture file path\n");
+				return 2;
+			}
+			record_hashes_file = argv[++i];
+		} else if (strcmp(argv[i], "--hash-interval") == 0) {
+			if (i + 1 >= argc) {
+				log("error: --hash-interval requires a positive integer\n");
+				return 2;
+			}
+			errno = 0;
+			char* end = nullptr;
+			long v = std::strtol(argv[++i], &end, 10);
+			if (errno != 0 || end == argv[i] || *end != '\0' || v <= 0 || v > std::numeric_limits<int>::max()) {
+				log("error: invalid --hash-interval value '%s' (expected positive integer)\n", argv[i]);
+				return 2;
+			}
+			hash_interval = (int)v;
 		} else if (strcmp(argv[i], "--headless") == 0) {
 			headless = true;
 		} else if (strcmp(argv[i], "--replay") == 0 && i + 1 < argc) {
@@ -827,6 +1202,32 @@ int main(int argc, char** argv) {
 	if (bench_frames > 0 && validate_replay) {
 		log("error: --bench and --validate-replay cannot be used together\n");
 		return 2;
+	}
+	if (bench_frames > 0 && verify_hashes_file) {
+		log("error: --bench and --verify-hashes cannot be used together\n");
+		return 2;
+	}
+	if (bench_frames > 0 && record_hashes_file) {
+		log("error: --bench and --record-hashes cannot be used together\n");
+		return 2;
+	}
+	if (validate_replay && verify_hashes_file) {
+		log("error: --validate-replay and --verify-hashes cannot be used together\n");
+		return 2;
+	}
+	if (validate_replay && record_hashes_file) {
+		log("error: --validate-replay and --record-hashes cannot be used together\n");
+		return 2;
+	}
+	if (verify_hashes_file && record_hashes_file) {
+		log("error: --verify-hashes and --record-hashes cannot be used together\n");
+		return 2;
+	}
+	if (record_hashes_file) {
+		return run_record_hashes(replay_file, record_hashes_file, hash_interval);
+	}
+	if (verify_hashes_file) {
+		return run_verify_hashes(replay_file, verify_hashes_file);
 	}
 	if (validate_replay) {
 		return run_validate_replay(replay_file);
