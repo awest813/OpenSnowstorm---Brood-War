@@ -58,8 +58,21 @@ verifiable set of user-visible milestones:
   exposes a context-sensitive `l` path (unload-all first, then lift off / land
   for Terran flying-building structures), landing uses armed placement flow, and
   cancel (`x` / command panel) now covers active nuclear launch cancellation.
-- Remaining immediate slice: commit the first user-facing replay fixture
-  (`maps/test.rep` + `maps/test.hashes`) and enable the CI replay gate.
+- **Targeted spell ability surface (25 spells)**: Science Vessel (scanner sweep,
+  defensive matrix, irradiate, EMP), Battlecruiser (yamato gun), Ghost (lockdown),
+  Vulture (spider mines), Medic (heal, restoration, optical flare), Queen (spawn
+  broodlings, parasite, ensnare, infestation), Defiler (dark swarm, plague,
+  consume), High Templar (psionic storm, hallucination), Arbiter (recall, stasis
+  field), Dark Archon (mind control, feedback, maelstrom), Corsair (disruption web)
+  — all now appear in the command panel and arm a `pending_order_mode` spell-
+  targeting mode; right-click fires the spell, ESC cancels.
+- **`--headless-map` mode**: runs a map session headlessly for up to N frames
+  (default 72000) and exits cleanly — enables CI smoke tests without a display.
+- **`--gen-test-replay` fixture generator**: generates a self-contained BW-format
+  replay from any map file, enabling creation of `maps/test.rep` + `maps/test.hashes`
+  for the CI gate without needing a live game session.
+- Remaining immediate slice: generate and commit `maps/test.rep` + `maps/test.hashes`
+  using `--gen-test-replay` to activate the CI `validate-replay` gate.
 
 ---
 
@@ -103,8 +116,9 @@ This kickoff is considered complete when:
 
 ## Immediate next slices
 
-1. Commit one minimal replay+hash fixture that exercises map start, unit
-   selection, and at least one combat interaction in a local-play scenario.
+1. Generate `maps/test.rep` + `maps/test.hashes` using
+   `gfxtest --gen-test-replay maps/test.rep --map <any.scx> --frames 240 --record-hashes maps/test.hashes`
+   and commit them to activate the CI `validate-replay` gate.
 2. Add campaign-readiness tracker rows (triggers, briefing, save/load) with
    statuses and concrete validation commands.
 3. Land one focused UX hardening patch that eliminates a known local-session

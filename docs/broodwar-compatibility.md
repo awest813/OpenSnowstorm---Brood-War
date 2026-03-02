@@ -72,6 +72,9 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | Stim pack in single-player command panel | `ui/ui.h` | Marine/Firebat stim pack is now accessible via the command panel and `i` hotkey in live map mode; `live_command_can_stim` gates readiness on tech unlock state. |
 | Archon / Dark Archon merge in command panel | `ui/ui.h` | High Templar / Dark Templar now show a Merge Archon / Merge Dark Archon ability in the command panel and via the `m` hotkey, gated by the relevant tech. |
 | Tab: center camera on selection | `ui/ui.h`, `ui/gfxtest.cpp` | Pressing Tab centers the camera on the centroid of the current unit selection in live map mode; aids navigation on large maps. |
+| Targeted spell ability surface (25 spells) | `ui/ui.h` | Science Vessel (scanner sweep, defensive matrix, irradiate, EMP), Battlecruiser (yamato gun), Ghost (lockdown), Vulture (spider mines), Medic (heal, restoration, optical flare), Queen (spawn broodlings, parasite, ensnare, infestation), Defiler (dark swarm, plague, consume), High Templar (psionic storm, hallucination), Arbiter (recall, stasis field), Dark Archon (mind control, feedback, maelstrom), Corsair (disruption web) — all now appear in the command panel and arm a targeting mode; right-click fires the spell. |
+| `--headless-map` smoke-test mode | `ui/gfxtest.cpp` | `gfxtest --map <file> --headless-map [<frame-limit>]` runs a map session headlessly up to `frame_limit` frames (default 72000) and exits cleanly, enabling CI smoke tests for map-load + simulation paths without a display. |
+| `--gen-test-replay` fixture generator | `ui/gfxtest.cpp`, `replay_saver.h` | `gfxtest --gen-test-replay <out.rep> --map <file> [--frames <n>] [--record-hashes <out.hashes>]` generates a self-contained deterministic replay fixture from any BW map file; enables creation of `maps/test.rep` + `maps/test.hashes` without requiring a live game session. |
 
 ## Campaign-readiness tracker (Phase 4 foundation)
 
@@ -111,11 +114,11 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 
 ## Next steps
 
-1. Commit a small test replay to `maps/test.rep` and enable the CI `validate-replay` gate.
+1. Generate `maps/test.rep` + `maps/test.hashes` from a BW map file using `--gen-test-replay` and commit them to enable the CI `validate-replay` gate.
 2. Add `maps/test.hashes` produced by `--record-hashes` and run `--verify-hashes` in CI.
 3. Extend `desync_report` with a recent action-history ring buffer for deeper triage.
 4. Begin combat fixture scenarios for damage-type / armor / splash edge cases.
-5. Cover remaining BW action IDs (59, 63–69, 72–86) with proper payload-size skip entries.
+5. Add briefing-flow fixture (briefing entry/exit loop without soft-lock).
 
 ## Definition of done for each compatibility slice
 
