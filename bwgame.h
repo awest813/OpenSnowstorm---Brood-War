@@ -19452,6 +19452,10 @@ struct state_copier {
 static inline state copy_state(const state& st) {
 	state r;
 	state_copier(st, r)();
+	// Ensure copied states also have full capacity reserved so forward-stepping
+	// after a restore doesn't trigger repeated reallocation in unit_finder_insert.
+	if (r.unit_finder_x.capacity() < 1700 * 2) r.unit_finder_x.reserve(1700 * 2);
+	if (r.unit_finder_y.capacity() < 1700 * 2) r.unit_finder_y.reserve(1700 * 2);
 	return r;
 }
 
@@ -22056,6 +22060,12 @@ public:
 		state& st = *uptr_st;
 		st.global = uptr_global_st.get();
 		st.game = uptr_game_st.get();
+		// Each unit occupies 2 entries (from + to bounds) in each finder axis.
+		// Pre-allocate to the hard cap to avoid incremental reallocation during
+		// unit creation, which would otherwise shift all iterators and force
+		// repeated O(n) memmoves inside unit_finder_insert.
+		st.unit_finder_x.reserve(1700 * 2);
+		st.unit_finder_y.reserve(1700 * 2);
 		global_init(*uptr_global_st, std::forward<load_data_file_F>(load_data_file));
 		set_st(st);
 	}
