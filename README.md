@@ -144,26 +144,26 @@ Controls in map mode:
 
 - **Left click/drag**: select units
 - **Left click command panel**: issue train/morph/research/upgrade and context-sensitive tactical commands
-- **Left click map (while a building command is armed)**: place building
-- **Right click**: issue default order (or cancel armed building placement)
+- **Left click map (while a building or landing command is armed)**: place building / land building
+- **Right click**: issue default order (or cancel armed building/landing placement)
 - **Middle mouse drag**: move camera
 - **S**: stop
 - **H**: hold position
 - **A**: attack-move (applies to next right click)
 - **T**: patrol (applies to next right click)
-- **X**: cancel active production/research/morph when possible
+- **X**: cancel active production/research/morph (and Ghost nuke launch when available)
 - **B**: burrow / unburrow (context-sensitive)
 - **G**: siege / unsiege (context-sensitive)
 - **C**: cloak / decloak (context-sensitive)
 - **R**: return carried cargo
-- **L**: unload all (transport)
+- **L**: unload all (transport), otherwise lift off / land for Terran flying-building structures
 - **I**: stim pack (Marine / Firebat, when researched)
 - **M**: merge archon / dark archon (High / Dark Templar, when researched)
 - **Tab**: center camera on selected unit(s)
 - **1–0**: recall control group
 - **Ctrl + 1–0**: set control group
 - **Shift + 1–0**: add to control group
-- **Esc**: cancel armed building placement
+- **Esc**: cancel armed building / landing placement
 - **Space / P**: pause
 - **U**: speed up simulation
 - **Z / D**: slow down simulation

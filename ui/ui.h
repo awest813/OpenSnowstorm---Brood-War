@@ -1635,14 +1635,20 @@ struct ui_functions: ui_util_functions {
 			case live_command_kind_t::ability_cloak_toggle: fill = 140; break;
 			case live_command_kind_t::ability_return_cargo: fill = 111; break;
 			case live_command_kind_t::ability_unload_all: fill = 102; break;
+			case live_command_kind_t::ability_liftoff_land_toggle: fill = 122; break;
 			case live_command_kind_t::ability_stim: fill = 162; break;
 			case live_command_kind_t::ability_morph_archon: fill = 175; break;
 			case live_command_kind_t::ability_morph_dark_archon: fill = 186; break;
 			}
 			if (!enabled) fill = 14;
 			fill_rectangle(data, data_pitch, rect{slot.from + xy(2, 2), slot.to - xy(2, 2)}, fill);
-			if (live_build_placement_armed && cmd.kind == live_command_kind_t::build_place &&
-			    cmd.unit_type == live_build_placement_command.unit_type) {
+			if (live_build_placement_armed &&
+			    ((cmd.kind == live_command_kind_t::build_place &&
+			      live_build_placement_command.kind == live_command_kind_t::build_place &&
+			      cmd.unit_type == live_build_placement_command.unit_type) ||
+			     (cmd.kind == live_command_kind_t::ability_liftoff_land_toggle &&
+			      live_build_placement_command.kind == live_command_kind_t::ability_liftoff_land_toggle &&
+			      cmd.unit_type == live_build_placement_command.unit_type))) {
 				line_rectangle(data, data_pitch, rect{slot.from + xy(1, 1), slot.to - xy(1, 1)}, 255);
 			}
 			int payload_id = live_command_payload_id(cmd);
@@ -1932,6 +1938,7 @@ struct ui_functions: ui_util_functions {
 		ability_cloak_toggle,
 		ability_return_cargo,
 		ability_unload_all,
+		ability_liftoff_land_toggle,
 		ability_stim,
 		ability_morph_archon,
 		ability_morph_dark_archon
@@ -1987,7 +1994,15 @@ struct ui_functions: ui_util_functions {
 	}
 
 	bool live_build_placement_is_valid(unit_t* u, const live_command_t& cmd, xy_t<size_t> tile_pos) const {
-		if (!u || !cmd.unit_type || !cmd.build_order_type) return false;
+		if (!u || !cmd.unit_type) return false;
+		if (cmd.kind == live_command_kind_t::ability_liftoff_land_toggle) {
+			if (!ut_flying_building(u) || !u_flying(u)) return false;
+			if (!unit_can_receive_order(u, get_order_type(Orders::BuildingLand), local_player_id)) return false;
+			xy pos(int(32 * tile_pos.x) + cmd.unit_type->placement_size.x / 2,
+			       int(32 * tile_pos.y) + cmd.unit_type->placement_size.y / 2);
+			return can_place_building(u, local_player_id, cmd.unit_type, pos, false, false);
+		}
+		if (cmd.kind != live_command_kind_t::build_place || !cmd.build_order_type) return false;
 		if (!unit_build_order_valid(u, cmd.build_order_type, cmd.unit_type, local_player_id)) return false;
 		if (ut_addon(cmd.unit_type)) {
 			xy addon_pos(int(32 * tile_pos.x) + cmd.unit_type->placement_size.x / 2,
@@ -2033,6 +2048,8 @@ struct ui_functions: ui_util_functions {
 			return live_command_can_return_cargo(source);
 		case live_command_kind_t::ability_unload_all:
 			return live_command_can_unload_all(source);
+		case live_command_kind_t::ability_liftoff_land_toggle:
+			return live_command_can_liftoff_land_toggle(source);
 		case live_command_kind_t::ability_stim:
 			return live_command_can_stim(source);
 		case live_command_kind_t::ability_morph_archon:
@@ -2067,6 +2084,8 @@ struct ui_functions: ui_util_functions {
 			return 905;
 		case live_command_kind_t::ability_unload_all:
 			return 906;
+		case live_command_kind_t::ability_liftoff_land_toggle:
+			return 910;
 		case live_command_kind_t::ability_stim:
 			return 907;
 		case live_command_kind_t::ability_morph_archon:
@@ -2095,6 +2114,7 @@ struct ui_functions: ui_util_functions {
 		if (source->order_type &&
 		    (source->order_type->id == Orders::ZergUnitMorph ||
 		     source->order_type->id == Orders::ZergBuildingMorph)) return true;
+		if (live_command_can_cancel_nuke(source)) return true;
 		return !source->build_queue.empty();
 	}
 
@@ -2136,6 +2156,19 @@ struct ui_functions: ui_util_functions {
 		return unit_can_receive_order(source, get_order_type(Orders::Unload), local_player_id);
 	}
 
+	bool live_command_can_liftoff_land_toggle(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		if (!ut_flying_building(source)) return false;
+		if (u_flying(source)) return unit_can_receive_order(source, get_order_type(Orders::BuildingLand), local_player_id);
+		return unit_can_receive_order(source, get_order_type(Orders::BuildingLiftoff), local_player_id);
+	}
+
+	bool live_command_can_cancel_nuke(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		if (!unit_is_ghost(source)) return false;
+		return source->connected_unit && unit_is(source->connected_unit, UnitTypes::Terran_Nuclear_Missile);
+	}
+
 	bool live_command_can_stim(const unit_t* source) const {
 		if (!source || source->owner != local_player_id) return false;
 		return unit_can_use_tech(source, get_tech_type(TechTypes::Stim_Packs), local_player_id);
@@ -2158,6 +2191,7 @@ struct ui_functions: ui_util_functions {
 		if (action_cancel_upgrade(local_player_id)) return true;
 		if (action_cancel_addon(local_player_id)) return true;
 		if (action_cancel_build_queue(local_player_id, 254)) return true;
+		if (action_cancel_nuke(local_player_id)) return true;
 		if (action_cancel_morph(local_player_id)) return true;
 		return action_cancel_building_unit(local_player_id);
 	}
@@ -2181,6 +2215,16 @@ struct ui_functions: ui_util_functions {
 			return action_return_cargo(local_player_id, queue);
 		case live_command_kind_t::ability_unload_all:
 			return action_unload_all(local_player_id, queue);
+		case live_command_kind_t::ability_liftoff_land_toggle:
+			if (!ut_flying_building(source)) return false;
+			if (u_flying(source)) {
+				live_build_placement_armed = true;
+				live_build_placement_command = {};
+				live_build_placement_command.kind = live_command_kind_t::ability_liftoff_land_toggle;
+				live_build_placement_command.unit_type = source->unit_type;
+				return true;
+			}
+			return action_liftoff(local_player_id, source->sprite->position);
 		case live_command_kind_t::ability_stim:
 			return action_stim_pack(local_player_id);
 		case live_command_kind_t::ability_morph_archon:
@@ -2222,6 +2266,7 @@ struct ui_functions: ui_util_functions {
 			if (live_commands.size() >= live_command_slots_n) return;
 			live_command_t cmd;
 			cmd.kind = kind;
+			if (kind == live_command_kind_t::ability_liftoff_land_toggle) cmd.unit_type = source->unit_type;
 			live_commands.push_back(cmd);
 		};
 
@@ -2231,6 +2276,7 @@ struct ui_functions: ui_util_functions {
 		add_ability(live_command_kind_t::ability_cloak_toggle, live_command_can_cloak_toggle(source));
 		add_ability(live_command_kind_t::ability_return_cargo, live_command_can_return_cargo(source));
 		add_ability(live_command_kind_t::ability_unload_all, live_command_can_unload_all(source));
+		add_ability(live_command_kind_t::ability_liftoff_land_toggle, live_command_can_liftoff_land_toggle(source));
 		add_ability(live_command_kind_t::ability_stim, live_command_can_stim(source));
 		add_ability(live_command_kind_t::ability_morph_archon, live_command_can_morph_archon(source));
 		add_ability(live_command_kind_t::ability_morph_dark_archon, live_command_can_morph_dark_archon(source));
@@ -2291,9 +2337,13 @@ struct ui_functions: ui_util_functions {
 		if (live_build_placement_armed) {
 			bool armed_still_present = false;
 			for (const auto& cmd : live_commands) {
-				if (cmd.kind != live_command_kind_t::build_place) continue;
-				if (cmd.unit_type != live_build_placement_command.unit_type) continue;
-				if (cmd.build_order_type != live_build_placement_command.build_order_type) continue;
+				if (cmd.kind != live_build_placement_command.kind) continue;
+				if (cmd.kind == live_command_kind_t::build_place) {
+					if (cmd.unit_type != live_build_placement_command.unit_type) continue;
+					if (cmd.build_order_type != live_build_placement_command.build_order_type) continue;
+				} else if (cmd.kind == live_command_kind_t::ability_liftoff_land_toggle) {
+					if (cmd.unit_type != live_build_placement_command.unit_type) continue;
+				}
 				armed_still_present = true;
 				break;
 			}
@@ -2408,6 +2458,7 @@ struct ui_functions: ui_util_functions {
 		case live_command_kind_t::ability_cloak_toggle:
 		case live_command_kind_t::ability_return_cargo:
 		case live_command_kind_t::ability_unload_all:
+		case live_command_kind_t::ability_liftoff_land_toggle:
 		case live_command_kind_t::ability_stim:
 		case live_command_kind_t::ability_morph_archon:
 		case live_command_kind_t::ability_morph_dark_archon:
@@ -2448,7 +2499,13 @@ struct ui_functions: ui_util_functions {
 		if (!live_build_placement_is_valid(source, live_build_placement_command, tile_pos)) return false;
 
 		sync_action_selection_from_current();
-		bool ok = action_build(local_player_id, live_build_placement_command.build_order_type, live_build_placement_command.unit_type, tile_pos);
+		bool ok = false;
+		if (live_build_placement_command.kind == live_command_kind_t::build_place) {
+			ok = action_build(local_player_id, live_build_placement_command.build_order_type, live_build_placement_command.unit_type, tile_pos);
+		} else if (live_build_placement_command.kind == live_command_kind_t::ability_liftoff_land_toggle) {
+			const unit_type_t* land_type = live_build_placement_command.unit_type ? live_build_placement_command.unit_type : source->unit_type;
+			ok = action_land(local_player_id, map_pos, land_type);
+		}
 		if (ok) {
 			cancel_live_build_placement();
 			live_commands_dirty = true;
@@ -2717,33 +2774,35 @@ struct ui_functions: ui_util_functions {
 							issue_live_ability_hotkey(live_command_kind_t::ability_siege_toggle, shift);
 						} else if (e.sym == 'c') {
 							issue_live_ability_hotkey(live_command_kind_t::ability_cloak_toggle, shift);
-					} else if (e.sym == 'r') {
-						issue_live_ability_hotkey(live_command_kind_t::ability_return_cargo, shift);
-					} else if (e.sym == 'l') {
-						issue_live_ability_hotkey(live_command_kind_t::ability_unload_all, shift);
-					} else if (e.sym == 'i') {
-						issue_live_ability_hotkey(live_command_kind_t::ability_stim, shift);
-					} else if (e.sym == 'm') {
-						if (!issue_live_ability_hotkey(live_command_kind_t::ability_morph_archon, shift)) {
-							issue_live_ability_hotkey(live_command_kind_t::ability_morph_dark_archon, shift);
-						}
-					} else if (e.sym == '\t') {
-						// Center camera on selected units.
-						if (!current_selection.empty()) {
-							xy sum_pos = {};
-							int count = 0;
-							for (auto uid : current_selection) {
-								unit_t* u = get_unit(uid);
-								if (!u || unit_dead(u)) continue;
-								sum_pos += u->sprite->position;
-								++count;
+						} else if (e.sym == 'r') {
+							issue_live_ability_hotkey(live_command_kind_t::ability_return_cargo, shift);
+						} else if (e.sym == 'l') {
+							if (!issue_live_ability_hotkey(live_command_kind_t::ability_unload_all, shift)) {
+								issue_live_ability_hotkey(live_command_kind_t::ability_liftoff_land_toggle, shift);
 							}
-							if (count > 0) {
-								xy center = sum_pos / count;
-								screen_pos = center - xy(view_width / 2, view_height / 2);
+						} else if (e.sym == 'i') {
+							issue_live_ability_hotkey(live_command_kind_t::ability_stim, shift);
+						} else if (e.sym == 'm') {
+							if (!issue_live_ability_hotkey(live_command_kind_t::ability_morph_archon, shift)) {
+								issue_live_ability_hotkey(live_command_kind_t::ability_morph_dark_archon, shift);
 							}
-						}
-					} else if (e.sym >= '0' && e.sym <= '9') {
+						} else if (e.sym == '\t') {
+							// Center camera on selected units.
+							if (!current_selection.empty()) {
+								xy sum_pos = {};
+								int count = 0;
+								for (auto uid : current_selection) {
+									unit_t* u = get_unit(uid);
+									if (!u || unit_dead(u)) continue;
+									sum_pos += u->sprite->position;
+									++count;
+								}
+								if (count > 0) {
+									xy center = sum_pos / count;
+									screen_pos = center - xy(view_width / 2, view_height / 2);
+								}
+							}
+						} else if (e.sym >= '0' && e.sym <= '9') {
 							size_t group_n = e.sym == '0' ? 9 : (size_t)(e.sym - '1');
 							int subaction = ctrl ? 0 : (shift ? 2 : 1);
 							sync_action_selection_from_current();

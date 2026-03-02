@@ -50,6 +50,10 @@ verifiable set of user-visible milestones:
   High Templar / Dark Templar when the relevant tech is researched.
 - **Tab: center camera on selection** — pressing Tab in live map mode centers the
   viewport on the centroid of the current selection.
+- **Terran lift off / land + Ghost cancel-nuke parity**: live map mode now
+  exposes a context-sensitive `l` path (unload-all first, then lift off / land
+  for Terran flying-building structures), landing uses armed placement flow, and
+  cancel (`x` / command panel) now covers active nuclear launch cancellation.
 - Remaining immediate slice: commit the first user-facing replay fixture
   (`maps/test.rep` + `maps/test.hashes`) and enable the CI replay gate.
 
