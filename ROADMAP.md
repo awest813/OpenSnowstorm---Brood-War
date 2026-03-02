@@ -10,6 +10,8 @@ For deeper technical breakdowns, see:
 - `docs/architecture.md` (module map / ownership model)
 - `docs/phase-1-kickoff.md` (active decomposition notes)
 - `docs/phase-2-kickoff.md` (active sync/replay reliability slice)
+- `docs/phase-3-kickoff.md` (platform/CI hardening kickoff)
+- `docs/phase-4-kickoff.md` (complete client experience foundations kickoff)
 - `docs/broodwar-compatibility.md` (compatibility matrix + validation backlog)
 
 ---
