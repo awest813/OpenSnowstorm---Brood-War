@@ -69,6 +69,7 @@ cmake --build build/ui -j
 - **Vision / “what this is trying to be”**: `docs/vision.md`
 - **Roadmap (high-level)**: `ROADMAP.md`
 - **Architecture map**: `docs/architecture.md`
+- **Brood War compatibility tracker**: `docs/broodwar-compatibility.md`
 - **Modernization details**: `docs/modernization-roadmap.md`
 - **Contributing**: `CONTRIBUTING.md`
 - **Code of Conduct**: `CODE_OF_CONDUCT.md`
