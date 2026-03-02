@@ -2,6 +2,8 @@
 
 This roadmap is based on a quick architecture pass over the current codebase, focusing on maintainability, portability, determinism safety, and developer quality-of-life.
 
+For the short, contributor-facing overview, see `../ROADMAP.md`. For the project’s “what this is trying to be” statement, see `vision.md`.
+
 ## Current Snapshot (what the codebase is optimized for today)
 
 - **Core engine logic appears to be concentrated in large header-heavy units** (notably `bwgame.h`), with substantial shared state and data tables.

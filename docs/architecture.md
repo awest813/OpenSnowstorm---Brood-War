@@ -5,6 +5,11 @@ Phase 1 decomposition of the original monolithic `bwgame.h`.  It is intended
 as an onboarding reference and as the shared source of truth for further
 refactoring work in later phases.
 
+See also:
+- `index.md` (documentation index)
+- `vision.md` (project direction)
+- `../ROADMAP.md` (high-level roadmap)
+
 ---
 
 ## High-Level Subsystem Map
