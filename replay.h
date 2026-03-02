@@ -87,6 +87,7 @@ struct replay_state {
 	a_string map_name;
 	std::array<a_string, 12> player_name;
 	int game_type = 0;
+	bool is_broodwar = true;
 };
 
 struct replay_functions: action_functions {
@@ -112,7 +113,7 @@ struct replay_functions: action_functions {
 		
 		data_loading::data_reader_le gir(game_info_buffer.data(), game_info_buffer.data() + game_info_buffer.size());
 		
-		gir.get<uint8_t>(); // is broodwar
+		replay_st.is_broodwar = gir.get<uint8_t>() != 0;
 		auto frame_count = gir.get<uint32_t>();
 		gir.get<uint16_t>(); // campaign id
 		gir.get<uint8_t>(); // command byte ?
@@ -152,7 +153,7 @@ struct replay_functions: action_functions {
 		auto tournament_mode = gir.get<uint8_t>(); // tournament mode ?
 		gir.get<uint32_t>(); // victory condition value?
 		auto starting_minerals = gir.get<uint32_t>(); // starting minerals
-		gir.get<uint32_t>(); // starting gas
+		auto starting_gas = gir.get<uint32_t>(); // starting gas
 		gir.get<uint8_t>(); // ?
 		
 		(void)player_name;
@@ -209,6 +210,7 @@ struct replay_functions: action_functions {
 			game_load_funcs.setup_info.tournament_mode = tournament_mode;
 			game_load_funcs.setup_info.resource_type = resource_type;
 			game_load_funcs.setup_info.starting_minerals = starting_minerals;
+			game_load_funcs.setup_info.starting_gas = starting_gas;
 			for (size_t i = 0; i != 12; ++i) {
 				st.players[i].controller = slot_controller[i];
 				st.players[i].race = (race_t)slot_race[i];

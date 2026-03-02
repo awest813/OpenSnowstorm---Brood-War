@@ -610,7 +610,7 @@ struct replay_saver_functions {
 		giw.put<uint8_t>(replay_saver_st.setup_info.tournament_mode); // tournament mode ?
 		giw.put<uint32_t>(0); // victory condition value?
 		giw.put<uint32_t>(replay_saver_st.setup_info.starting_minerals); // starting minerals
-		giw.put<uint32_t>(0); // starting gas
+		giw.put<uint32_t>(replay_saver_st.setup_info.starting_gas); // starting gas
 		giw.put<uint8_t>(0); // ?
 		
 		for (size_t i = 0; i != 12; ++i) {
