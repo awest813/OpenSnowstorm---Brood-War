@@ -10,6 +10,11 @@
 
 #include <chrono>
 #include <thread>
+#include <cstring>
+#include <cstdlib>
+#include <limits>
+
+#include "../perf_metrics.h"
 
 using namespace bwgame;
 
@@ -61,6 +66,8 @@ struct main_t {
 	std::chrono::high_resolution_clock::time_point last_fps;
 	int fps_counter = 0;
 
+	perf::frame_timer sim_timer;
+
 	a_map<int, std::unique_ptr<saved_state>> saved_states;
 
 	void reset() {
@@ -74,7 +81,12 @@ struct main_t {
 		auto tick_speed = std::chrono::milliseconds((fp8::integer(42) / ui.game_speed).integer_part());
 
 		if (now - last_fps >= std::chrono::seconds(1)) {
-			//log("game fps: %g\n", fps_counter / std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1, 1>>>(now - last_fps).count());
+			if (fps_counter > 0) {
+				log("[perf] sim: %.1f fps  mean=%.0f us  p95=%.0f us\n",
+				    sim_timer.fps(),
+				    sim_timer.mean_us(),
+				    (double)sim_timer.percentile_us(95));
+			}
 			last_fps = now;
 			fps_counter = 0;
 		}
@@ -101,6 +113,7 @@ struct main_t {
 				}
 			}
 			ui.replay_functions::next_frame();
+			sim_timer.tick();
 			for (auto& v : ui.apm) v.update(ui.st.current_frame);
 		};
 
@@ -178,23 +191,24 @@ void free_memory() {
 	printf("n_states is %d\n", n_states);
 	if (n_states <= 2) out_of_memory();
 	size_t n;
-	if (n_states >= 300) n = 1 + freemem_rand() % (n_states - 2);
-	else {
+	// For large collections use random eviction (O(1)); for small collections use
+	// the O(n) greedy strategy that removes whichever state is closest to one of
+	// its two adjacent neighbours, minimising the worst-case seek penalty.
+	if (n_states >= 64) {
+		n = 1 + freemem_rand() % (n_states - 2);
+	} else {
 		auto begin = std::next(g_m->saved_states.begin());
 		auto end = std::prev(g_m->saved_states.end());
 		n = 1;
-		int best_score = std::numeric_limits<int>::max();
+		int best_gap = std::numeric_limits<int>::max();
 		size_t i_n = 1;
-		for (auto i = begin; i != end; ++i, ++i_n) {
-			int score = 0;
-			for (auto i2 = begin; i2 != end; ++i2) {
-				if (i2 != i) {
-					int d = i2->first - i->first;
-					score += d*d;
-				}
-			}
-			if (score < best_score) {
-				best_score = score;
+		auto prev_i = begin;
+		auto cur_i = std::next(begin);
+		for (; cur_i != end; ++prev_i, ++cur_i, ++i_n) {
+			// Gap to left neighbour
+			int gap = cur_i->first - prev_i->first;
+			if (gap < best_gap) {
+				best_gap = gap;
 				n = i_n;
 			}
 		}
@@ -275,7 +289,7 @@ struct js_file_reader {
 		file_pointer = offset;
 	}
 	size_t tell() const {
-		file_pointer;
+		return file_pointer;
 	}
 
 	size_t size() {
@@ -608,11 +622,88 @@ extern "C" void load_replay(const uint8_t* data, size_t len) {
 
 #endif
 
-int main() {
+// ---------------------------------------------------------------------------
+// Benchmark mode: step N frames without any rendering and report throughput.
+// Usage: gfxtest --bench <frames> [--replay <file>]
+//
+// This intentionally avoids all SDL/UI initialisation so the reported number
+// reflects pure simulation cost.
+// ---------------------------------------------------------------------------
+#ifndef EMSCRIPTEN
+static int run_bench(int bench_frames, const char* replay_file) {
+	using namespace bwgame;
+
+	const char* rep = replay_file ? replay_file : "maps/p49.rep";
+	log("bench: loading replay '%s', stepping %d frames (no UI)\n", rep, bench_frames);
+
+	auto load_data_file = data_loading::data_files_directory("");
+
+	// replay_player owns its own global/game/sim state.
+	replay_player player;
+	player.init(load_data_file);
+	player.load_replay_file(rep);
+
+	int64_t total_us = 0;
+	int64_t min_us   = std::numeric_limits<int64_t>::max();
+	int64_t max_us   = 0;
+
+	int frames = 0;
+	while (!player.is_done() && frames < bench_frames) {
+		int64_t frame_us = 0;
+		{
+			perf::scope_timer t(frame_us);
+			player.next_frame();
+		}
+		total_us += frame_us;
+		if (frame_us < min_us) min_us = frame_us;
+		if (frame_us > max_us) max_us = frame_us;
+		++frames;
+	}
+
+	double elapsed_s = total_us * 1e-6;
+	double fps        = elapsed_s > 0 ? frames / elapsed_s : 0;
+	double mean_us    = frames  > 0 ? (double)total_us / frames : 0;
+
+	log("bench: %d frames\n"
+	    "  fps    : %.1f\n"
+	    "  mean   : %.1f us\n"
+	    "  min    : %lld us\n"
+	    "  max    : %lld us\n",
+	    frames, fps, mean_us,
+	    (long long)min_us,
+	    (long long)max_us);
+	return 0;
+}
+#endif
+
+int main(int argc, char** argv) {
 
 	using namespace bwgame;
 
 	log("v25\n");
+
+#ifndef EMSCRIPTEN
+	// Argument parsing
+	const char* replay_file = nullptr;
+	int bench_frames = 0;
+	bool headless = false;
+
+	for (int i = 1; i < argc; ++i) {
+		if (strcmp(argv[i], "--bench") == 0 && i + 1 < argc) {
+			bench_frames = atoi(argv[++i]);
+		} else if (strcmp(argv[i], "--headless") == 0) {
+			headless = true;
+		} else if (strcmp(argv[i], "--replay") == 0 && i + 1 < argc) {
+			replay_file = argv[++i];
+		} else if (argv[i][0] != '-') {
+			replay_file = argv[i];
+		}
+	}
+
+	if (bench_frames > 0) {
+		return run_bench(bench_frames, replay_file);
+	}
+#endif
 
 	size_t screen_width = 1280;
 	size_t screen_height = 800;
@@ -644,7 +735,7 @@ int main() {
 	ui.init();
 
 #ifndef EMSCRIPTEN
-	ui.load_replay_file("maps/p49.rep");
+	ui.load_replay_file(replay_file ? replay_file : "maps/p49.rep");
 #endif
 
 	auto& wnd = ui.wnd;
@@ -671,9 +762,27 @@ int main() {
 	}, &m, 0, 1);
 #else
 	::g_m = &m;
-	while (true) {
-		m.update();
-		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+	if (headless) {
+		// Headless mode: run the simulation forward without rendering.
+		// Useful for profiling simulation throughput or bot testing.
+		while (!ui.is_done()) {
+			ui.replay_functions::next_frame();
+		}
+	} else {
+		// Normal display loop with adaptive sleep: sleep only until the next
+		// tick is due rather than a fixed 20 ms, reducing latency jitter.
+		while (true) {
+			auto frame_start = clock.now();
+			m.update();
+			// Sleep adaptively: target ~16ms frame time (roughly 60 Hz UI).
+			// std::chrono arithmetic keeps us from accumulating drift.
+			auto frame_elapsed = clock.now() - frame_start;
+			auto target = std::chrono::milliseconds(16);
+			if (frame_elapsed < target) {
+				std::this_thread::sleep_for(target - frame_elapsed);
+			}
+		}
 	}
 #endif
 	::g_m = nullptr;
