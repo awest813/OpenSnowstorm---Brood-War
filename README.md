@@ -157,6 +157,9 @@ Controls in map mode:
 - **C**: cloak / decloak (context-sensitive)
 - **R**: return carried cargo
 - **L**: unload all (transport)
+- **I**: stim pack (Marine / Firebat, when researched)
+- **M**: merge archon / dark archon (High / Dark Templar, when researched)
+- **Tab**: center camera on selected unit(s)
 - **1–0**: recall control group
 - **Ctrl + 1–0**: set control group
 - **Shift + 1–0**: add to control group

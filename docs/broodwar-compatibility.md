@@ -66,6 +66,10 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | Replay seek-state bootstrap hardening | `ui/gfxtest.cpp` | Replay frame seeking now guarantees at least one snapshot before lookup, avoiding an empty-state dereference during early seek/rewind transitions. |
 | UMS slot-topology-preserving map startup | `ui/gfxtest.cpp` | `gfxtest --map --game-type ums` now preserves authored participant layout instead of forcing a strict two-slot open/computer conversion path; local and optional enemy slots are selected with mode-aware validation. |
 | Expanded local-command parity surface | `ui/ui.h`, `actions.h`, `ui/gfxtest.cpp`, `README.md` | Single-player map mode now exposes additional tactical actions (cancel, burrow toggle, siege toggle, cloak toggle, return cargo, unload all) via hotkeys and command panel entries; action success propagation for cloak/unload paths is now reported correctly to UI callers. |
+| Full BW action ID coverage (55–91) | `actions.h` | All remaining BW replay/lobby action IDs (59, 63–69, 72–86) now have explicit skip entries; completes non-simulation action coverage from 55–91 and eliminates stderr warning spam for those IDs in replays. |
+| Stim pack in single-player command panel | `ui/ui.h` | Marine/Firebat stim pack is now accessible via the command panel and `i` hotkey in live map mode; `live_command_can_stim` gates readiness on tech unlock state. |
+| Archon / Dark Archon merge in command panel | `ui/ui.h` | High Templar / Dark Templar now show a Merge Archon / Merge Dark Archon ability in the command panel and via the `m` hotkey, gated by the relevant tech. |
+| Tab: center camera on selection | `ui/ui.h`, `ui/gfxtest.cpp` | Pressing Tab centers the camera on the centroid of the current unit selection in live map mode; aids navigation on large maps. |
 
 ## Campaign-readiness tracker (Phase 4 foundation)
 

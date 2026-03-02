@@ -1635,6 +1635,9 @@ struct ui_functions: ui_util_functions {
 			case live_command_kind_t::ability_cloak_toggle: fill = 140; break;
 			case live_command_kind_t::ability_return_cargo: fill = 111; break;
 			case live_command_kind_t::ability_unload_all: fill = 102; break;
+			case live_command_kind_t::ability_stim: fill = 162; break;
+			case live_command_kind_t::ability_morph_archon: fill = 175; break;
+			case live_command_kind_t::ability_morph_dark_archon: fill = 186; break;
 			}
 			if (!enabled) fill = 14;
 			fill_rectangle(data, data_pitch, rect{slot.from + xy(2, 2), slot.to - xy(2, 2)}, fill);
@@ -1928,7 +1931,10 @@ struct ui_functions: ui_util_functions {
 		ability_siege_toggle,
 		ability_cloak_toggle,
 		ability_return_cargo,
-		ability_unload_all
+		ability_unload_all,
+		ability_stim,
+		ability_morph_archon,
+		ability_morph_dark_archon
 	};
 
 	struct live_command_t {
@@ -2027,6 +2033,12 @@ struct ui_functions: ui_util_functions {
 			return live_command_can_return_cargo(source);
 		case live_command_kind_t::ability_unload_all:
 			return live_command_can_unload_all(source);
+		case live_command_kind_t::ability_stim:
+			return live_command_can_stim(source);
+		case live_command_kind_t::ability_morph_archon:
+			return live_command_can_morph_archon(source);
+		case live_command_kind_t::ability_morph_dark_archon:
+			return live_command_can_morph_dark_archon(source);
 		}
 		return false;
 	}
@@ -2055,6 +2067,12 @@ struct ui_functions: ui_util_functions {
 			return 905;
 		case live_command_kind_t::ability_unload_all:
 			return 906;
+		case live_command_kind_t::ability_stim:
+			return 907;
+		case live_command_kind_t::ability_morph_archon:
+			return 908;
+		case live_command_kind_t::ability_morph_dark_archon:
+			return 909;
 		}
 		return 0;
 	}
@@ -2118,6 +2136,23 @@ struct ui_functions: ui_util_functions {
 		return unit_can_receive_order(source, get_order_type(Orders::Unload), local_player_id);
 	}
 
+	bool live_command_can_stim(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		return unit_can_use_tech(source, get_tech_type(TechTypes::Stim_Packs), local_player_id);
+	}
+
+	bool live_command_can_morph_archon(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		if (!unit_is(source, UnitTypes::Protoss_High_Templar)) return false;
+		return unit_can_use_tech(source, get_tech_type(TechTypes::Archon_Warp), local_player_id);
+	}
+
+	bool live_command_can_morph_dark_archon(const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		if (!unit_is(source, UnitTypes::Protoss_Dark_Templar)) return false;
+		return unit_can_use_tech(source, get_tech_type(TechTypes::Dark_Archon_Meld), local_player_id);
+	}
+
 	bool execute_live_cancel_command() {
 		if (action_cancel_research(local_player_id)) return true;
 		if (action_cancel_upgrade(local_player_id)) return true;
@@ -2146,6 +2181,12 @@ struct ui_functions: ui_util_functions {
 			return action_return_cargo(local_player_id, queue);
 		case live_command_kind_t::ability_unload_all:
 			return action_unload_all(local_player_id, queue);
+		case live_command_kind_t::ability_stim:
+			return action_stim_pack(local_player_id);
+		case live_command_kind_t::ability_morph_archon:
+			return action_morph_archon(local_player_id);
+		case live_command_kind_t::ability_morph_dark_archon:
+			return action_morph_dark_archon(local_player_id);
 		default:
 			return false;
 		}
@@ -2190,6 +2231,9 @@ struct ui_functions: ui_util_functions {
 		add_ability(live_command_kind_t::ability_cloak_toggle, live_command_can_cloak_toggle(source));
 		add_ability(live_command_kind_t::ability_return_cargo, live_command_can_return_cargo(source));
 		add_ability(live_command_kind_t::ability_unload_all, live_command_can_unload_all(source));
+		add_ability(live_command_kind_t::ability_stim, live_command_can_stim(source));
+		add_ability(live_command_kind_t::ability_morph_archon, live_command_can_morph_archon(source));
+		add_ability(live_command_kind_t::ability_morph_dark_archon, live_command_can_morph_dark_archon(source));
 
 		for (const auto& v : game_st.unit_types.vec) {
 			const unit_type_t* unit_type = &v;
@@ -2364,6 +2408,9 @@ struct ui_functions: ui_util_functions {
 		case live_command_kind_t::ability_cloak_toggle:
 		case live_command_kind_t::ability_return_cargo:
 		case live_command_kind_t::ability_unload_all:
+		case live_command_kind_t::ability_stim:
+		case live_command_kind_t::ability_morph_archon:
+		case live_command_kind_t::ability_morph_dark_archon:
 			cancel_live_build_placement();
 			ok = execute_live_ability_command(cmd.kind, false);
 			break;
@@ -2670,11 +2717,33 @@ struct ui_functions: ui_util_functions {
 							issue_live_ability_hotkey(live_command_kind_t::ability_siege_toggle, shift);
 						} else if (e.sym == 'c') {
 							issue_live_ability_hotkey(live_command_kind_t::ability_cloak_toggle, shift);
-						} else if (e.sym == 'r') {
-							issue_live_ability_hotkey(live_command_kind_t::ability_return_cargo, shift);
-						} else if (e.sym == 'l') {
-							issue_live_ability_hotkey(live_command_kind_t::ability_unload_all, shift);
-						} else if (e.sym >= '0' && e.sym <= '9') {
+					} else if (e.sym == 'r') {
+						issue_live_ability_hotkey(live_command_kind_t::ability_return_cargo, shift);
+					} else if (e.sym == 'l') {
+						issue_live_ability_hotkey(live_command_kind_t::ability_unload_all, shift);
+					} else if (e.sym == 'i') {
+						issue_live_ability_hotkey(live_command_kind_t::ability_stim, shift);
+					} else if (e.sym == 'm') {
+						if (!issue_live_ability_hotkey(live_command_kind_t::ability_morph_archon, shift)) {
+							issue_live_ability_hotkey(live_command_kind_t::ability_morph_dark_archon, shift);
+						}
+					} else if (e.sym == '\t') {
+						// Center camera on selected units.
+						if (!current_selection.empty()) {
+							xy sum_pos = {};
+							int count = 0;
+							for (auto uid : current_selection) {
+								unit_t* u = get_unit(uid);
+								if (!u || unit_dead(u)) continue;
+								sum_pos += u->sprite->position;
+								++count;
+							}
+							if (count > 0) {
+								xy center = sum_pos / count;
+								screen_pos = center - xy(view_width / 2, view_height / 2);
+							}
+						}
+					} else if (e.sym >= '0' && e.sym <= '9') {
 							size_t group_n = e.sym == '0' ? 9 : (size_t)(e.sym - '1');
 							int subaction = ctrl ? 0 : (shift ? 2 : 1);
 							sync_action_selection_from_current();

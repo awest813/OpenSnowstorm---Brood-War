@@ -34,15 +34,24 @@ verifiable set of user-visible milestones:
 ---
 
 
-## Progress update (started)
+## Progress update (in progress)
 
 - Added a replay seek-state resilience fix in `ui/gfxtest.cpp` to prevent early
   replay-frame seek/rewind paths from dereferencing an empty saved-state map.
 - Extended `docs/broodwar-compatibility.md` with a Phase 4 campaign-readiness
   tracker (triggers, briefing flow, save/load) including deterministic commands
   that define pass/fail once fixtures are landed.
-- Remaining immediate slice to keep driving: commit the first user-facing replay
-  fixture (`maps/test.rep` + `maps/test.hashes`) and enable the CI replay gate.
+- **Completed BW action ID coverage (55–91)**: actions 59, 63–69, and 72–86 now
+  have explicit skip entries in `actions.h`, eliminating stderr warning spam for
+  lobby/system actions encountered in replays.
+- **Stim pack** (`i` hotkey, command panel `ability_stim`) now available for
+  Marine/Firebat in live map mode via `live_command_can_stim`.
+- **Archon / Dark Archon merge** (`m` hotkey, command panel) now available for
+  High Templar / Dark Templar when the relevant tech is researched.
+- **Tab: center camera on selection** — pressing Tab in live map mode centers the
+  viewport on the centroid of the current selection.
+- Remaining immediate slice: commit the first user-facing replay fixture
+  (`maps/test.rep` + `maps/test.hashes`) and enable the CI replay gate.
 
 ---
 

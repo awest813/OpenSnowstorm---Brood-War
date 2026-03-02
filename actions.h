@@ -1506,38 +1506,93 @@ struct action_functions: state_functions {
 			return read_action_morph_building(owner, r);
 		case 54:
 			return read_action_stim_pack(owner, r);
-		// Actions 55-86: various BW observer/lobby actions that do not affect
-		// deterministic simulation state.  Consume the known payload bytes and
-		// return without error so replay playback can continue.
-		case 55:
-			// Save game: 33-byte null-terminated filename.
-			return read_action_skip<33>(owner, r, 55);
-		case 56:
-			// Load saved game: 33-byte null-terminated filename.
-			return read_action_skip<33>(owner, r, 56);
-		case 57:
-			// Restart scenario: no payload.
-			return read_action_skip<0>(owner, r, 57);
-		case 58:
-			// Make game public: no payload.
-			return read_action_skip<0>(owner, r, 58);
-		case 60:
-			// Game speed change: 1-byte speed value (0 = Slowest … 6 = Fastest).
-			// Affects replay playback rate only, not simulation state.
-			return read_action_skip<1>(owner, r, 60);
-		case 61:
-			// Pause game: no simulation payload.
-			return read_action_skip<0>(owner, r, 61);
-		case 62:
-			// Resume game: no simulation payload.
-			return read_action_skip<0>(owner, r, 62);
-		case 70:
-			// Vision toggle (observer vision sharing): 2-byte flags word.
-			// A complementary path to action 13; affects only the observer view.
-			return read_action_skip<2>(owner, r, 70);
-		case 71:
-			// Allied victory toggle: 1-byte flag.
-			return read_action_skip<1>(owner, r, 71);
+	// Actions 55-91: various BW observer/lobby actions that do not affect
+	// deterministic simulation state.  Consume the known payload bytes and
+	// return without error so replay playback can continue.
+	case 55:
+		// Save game: 33-byte null-terminated filename.
+		return read_action_skip<33>(owner, r, 55);
+	case 56:
+		// Load saved game: 33-byte null-terminated filename.
+		return read_action_skip<33>(owner, r, 56);
+	case 57:
+		// Restart scenario: no payload.
+		return read_action_skip<0>(owner, r, 57);
+	case 58:
+		// Make game public: no payload.
+		return read_action_skip<0>(owner, r, 58);
+	case 59:
+		// BW-specific system marker: no simulation payload.
+		return read_action_skip<0>(owner, r, 59);
+	case 60:
+		// Game speed change: 1-byte speed value (0 = Slowest … 6 = Fastest).
+		// Affects replay playback rate only, not simulation state.
+		return read_action_skip<1>(owner, r, 60);
+	case 61:
+		// Pause game: no simulation payload.
+		return read_action_skip<0>(owner, r, 61);
+	case 62:
+		// Resume game: no simulation payload.
+		return read_action_skip<0>(owner, r, 62);
+	case 63:
+		// Lobby slot assignment / race pick: no in-game simulation payload.
+		return read_action_skip<0>(owner, r, 63);
+	case 64:
+		// Lobby ready-state toggle: no simulation payload.
+		return read_action_skip<0>(owner, r, 64);
+	case 65:
+		// Lobby observer slot toggle: no simulation payload.
+		return read_action_skip<0>(owner, r, 65);
+	case 66:
+		// Lobby computer slot toggle: no simulation payload.
+		return read_action_skip<0>(owner, r, 66);
+	case 67:
+		// Lobby handicap or change-race request: no simulation payload.
+		return read_action_skip<0>(owner, r, 67);
+	case 68:
+		// Lobby team assignment: no simulation payload.
+		return read_action_skip<0>(owner, r, 68);
+	case 69:
+		// Lobby allied-victory or team-game flag: no simulation payload.
+		return read_action_skip<0>(owner, r, 69);
+	case 70:
+		// Vision toggle (observer vision sharing): 2-byte flags word.
+		// A complementary path to action 13; affects only the observer view.
+		return read_action_skip<2>(owner, r, 70);
+	case 71:
+		// Allied victory toggle: 1-byte flag.
+		return read_action_skip<1>(owner, r, 71);
+	case 72:
+		// BW lobby/pre-game marker: no simulation payload.
+		return read_action_skip<0>(owner, r, 72);
+	case 73:
+		return read_action_skip<0>(owner, r, 73);
+	case 74:
+		return read_action_skip<0>(owner, r, 74);
+	case 75:
+		return read_action_skip<0>(owner, r, 75);
+	case 76:
+		return read_action_skip<0>(owner, r, 76);
+	case 77:
+		return read_action_skip<0>(owner, r, 77);
+	case 78:
+		return read_action_skip<0>(owner, r, 78);
+	case 79:
+		return read_action_skip<0>(owner, r, 79);
+	case 80:
+		return read_action_skip<0>(owner, r, 80);
+	case 81:
+		return read_action_skip<0>(owner, r, 81);
+	case 82:
+		return read_action_skip<0>(owner, r, 82);
+	case 83:
+		return read_action_skip<0>(owner, r, 83);
+	case 84:
+		return read_action_skip<0>(owner, r, 84);
+	case 85:
+		return read_action_skip<0>(owner, r, 85);
+	case 86:
+		return read_action_skip<0>(owner, r, 86);
 		case 87:
 			return read_action_player_leave(owner, r);
 		case 88:
