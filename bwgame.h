@@ -1,11 +1,24 @@
 #ifndef BWGAME_BWGAME_H
 #define BWGAME_BWGAME_H
 
-#include "util.h"
-#include "data_types.h"
-#include "game_types.h"
+// bwgame.h – compatibility facade.
+//
+// The simulation engine was historically a single monolithic header.  Phase 1
+// of the modernization roadmap decomposed it into focused modules:
+//
+//   bwgame_tables.h  – offline-computed lookup tables (angles, directions,
+//                      combat scatter offsets, psi-field masks, player slots).
+//   bwgame_state.h   – state type definitions with documented ownership model
+//                      (global_state, game_state, state_base_copyable,
+//                       state_base_non_copyable, state).
+//
+// All downstream consumers that include "bwgame.h" continue to work without
+// change.  New code should prefer including the narrower headers directly.
+
+#include "bwgame_tables.h"
+#include "bwgame_state.h"
+
 #include "data_loading.h"
-#include "bwenums.h"
 #include "korean.h"
 #include "simulation_constants.h"
 
@@ -131,140 +144,7 @@ struct state_base_copyable {
 	const global_state* global;
 	game_state* game;
 
-	int update_tiles_countdown;
-
-	int order_timer_counter;
-	int secondary_order_timer_counter;
-	int current_frame;
-
-	std::array<player_t, 12> players;
-
-	std::array<std::array<int, 12>, 12> alliances;
-
-	std::array<type_indexed_array<int, UpgradeTypes>, 12> upgrade_levels;
-	std::array<type_indexed_array<bool, UpgradeTypes>, 12> upgrade_upgrading;
-	std::array<type_indexed_array<bool, TechTypes>, 12> tech_researched;
-	std::array<type_indexed_array<bool, TechTypes>, 12> tech_researching;
-
-	std::array<type_indexed_array<int, UnitTypes>, 12> unit_counts;
-	std::array<type_indexed_array<int, UnitTypes>, 12> completed_unit_counts;
-
-	std::array<int, 12> factory_counts;
-	std::array<int, 12> building_counts;
-	std::array<int, 12> non_building_counts;
-
-	std::array<int, 12> completed_factory_counts;
-	std::array<int, 12> completed_building_counts;
-	std::array<int, 12> completed_non_building_counts;
-
-	std::array<int, 12> total_buildings_ever_completed;
-	std::array<int, 12> total_non_buildings_ever_completed;
-
-	std::array<int, 12> unit_score;
-	std::array<int, 12> building_score;
-
-	std::array<std::array<fp1, 3>, 12> supply_used;
-	std::array<std::array<fp1, 3>, 12> supply_available;
-
-	std::array<uint32_t, 12> shared_vision;
-
-	a_vector<tile_t> tiles;
-	a_vector<uint16_t> tiles_mega_tile_index;
-
-	std::array<int, 0x100> random_counts;
-	int total_random_counts;
-	uint32_t lcg_rand_state;
-
-	int last_error;
-
-	int trigger_timer;
-	std::array<a_vector<running_trigger>, 8> running_triggers;
-	std::array<int, 12> trigger_wait_timers;
-	std::array<bool, 12> trigger_waiting;
-
-	size_t active_orders_size;
-	size_t active_bullets_size;
-	size_t active_thingies_size;
-
-	a_vector<uint8_t> repulse_field;
-
-	bool prev_bullet_heading_offset_clockwise;
-
-	std::array<int, 12> current_minerals;
-	std::array<int, 12> current_gas;
-	std::array<int, 12> total_minerals_gathered;
-	std::array<int, 12> total_gas_gathered;
-
-	std::array<static_vector<std::pair<size_t, size_t>, 16>, 32> recent_lurker_hits;
-	size_t recent_lurker_hit_current_index;
-
-	creep_life_t creep_life;
-	bool update_psionic_matrix;
-	int disruption_webbed_units;
-	bool cheats_enabled;
-	bool cheat_operation_cwal;
-
-	a_vector<location> locations;
-};
-
-struct psionic_matrix_link_f {
-	auto* operator()(unit_t* ptr) {
-		return &ptr->building.pylon.psionic_matrix_link;
-	}
-	auto* operator()(const unit_t* ptr) {
-		return &ptr->building.pylon.psionic_matrix_link;
-	}
-};
-
-struct state_base_non_copyable {
-
-	state_base_non_copyable() = default;
-	state_base_non_copyable(const state_base_non_copyable&) = delete;
-	state_base_non_copyable(state_base_non_copyable&&) = default;
-	state_base_non_copyable& operator=(const state_base_non_copyable&) = delete;
-	state_base_non_copyable& operator=(state_base_non_copyable&&) = default;
-
-	intrusive_list<unit_t, default_link_f> visible_units;
-	intrusive_list<unit_t, default_link_f> hidden_units;
-	intrusive_list<unit_t, default_link_f> map_revealer_units;
-	intrusive_list<unit_t, default_link_f> dead_units;
-
-	std::array<intrusive_list<unit_t, void, &unit_t::player_units_link>, 12> player_units;
-	intrusive_list<unit_t, void, &unit_t::cloaked_unit_link> cloaked_units;
-	intrusive_list<unit_t, psionic_matrix_link_f> psionic_matrix_units;
-
-	object_container<unit_t, 1700, 17> units_container;
-
-	intrusive_list<bullet_t, default_link_f> active_bullets;
-	object_container<bullet_t, 100, 10> bullets_container;
-
-	a_vector<intrusive_list<sprite_t, default_link_f>> sprites_on_tile_line;
-	object_container<sprite_t, 2500, 25> sprites_container;
-
-	object_container<image_t, 5000, 50> images_container;
-
-	object_container<order_t, 2000, 20> orders_container;
-
-	intrusive_list<path_t, default_link_f> free_paths;
-	a_list<path_t> paths;
-
-	intrusive_list<thingy_t, default_link_f> active_thingies;
-	intrusive_list<thingy_t, default_link_f> free_thingies;
-	a_list<thingy_t> thingies;
-
-	struct unit_finder_entry {
-		unit_t* u;
-		int value;
-	};
-	a_vector<unit_finder_entry> unit_finder_x;
-	a_vector<unit_finder_entry> unit_finder_y;
-
-	const unit_t* consider_collision_with_unit_bug;
-	const unit_t* prev_bullet_source_unit;
-};
-
-struct state : state_base_copyable, state_base_non_copyable {
-};
+// (state type definitions relocated to bwgame_state.h – included above via the facade)
 
 struct state_functions {
 
