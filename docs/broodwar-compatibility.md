@@ -63,8 +63,7 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 
 | Change | Files | What it enables |
 |---|---|---|
-| Replay seek-state bootstrap hardening | `ui/gfxtest.cpp` | Replay frame seeking now guarantees at least one snapshot before lookup, avoids empty-state dereference during early seek/rewind transitions, and preserves exact-frame snapshot reuse when available. |
-| Conditional replay CI gate activation | `.github/workflows/ci.yml` | The `validate-replay` job now auto-enables when `maps/test.rep` and `maps/test.hashes` exist, keeping the gate ready without forcing failures before fixtures land. |
+| Replay seek-state bootstrap hardening | `ui/gfxtest.cpp` | Replay frame seeking now guarantees at least one snapshot before lookup, avoiding an empty-state dereference during early seek/rewind transitions. |
 
 ## Campaign-readiness tracker (Phase 4 foundation)
 
