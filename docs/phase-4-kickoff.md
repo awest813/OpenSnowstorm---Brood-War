@@ -71,6 +71,18 @@ verifiable set of user-visible milestones:
 - **`--gen-test-replay` fixture generator**: generates a self-contained BW-format
   replay from any map file, enabling creation of `maps/test.rep` + `maps/test.hashes`
   for the CI gate without needing a live game session.
+- **Debug overlay (F3 / `--debug-overlay`)**: pressing F3 or passing `--debug-overlay`
+  shows a compact top-left HUD with current frame number, draw FPS, game speed
+  multiplier and a paused indicator; works in both replay and live-map modes.
+  `fps_draw_last` is updated once per second in `ui_functions::update()`.
+- **Desync action-history ring buffer**: `desync_report` now carries a 16-entry
+  ring buffer of the most-recently executed local actions at mismatch time; field
+  names `recent_actions`, `recent_actions_count`, `recent_actions_tail` with a
+  convenience `push_recent_action()` method.  `sync_functions` overrides
+  `on_action()` to push to `sync_state::recent_action_ring` on every dispatched
+  action; the buffer is snapshotted into the `desync_report` at mismatch
+  detection.  `write_desync_reports()` prints the history oldest-first for
+  structured CI/log triage.
 - Remaining immediate slice: generate and commit `maps/test.rep` + `maps/test.hashes`
   using `--gen-test-replay` to activate the CI `validate-replay` gate.
 

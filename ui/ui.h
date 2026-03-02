@@ -1719,6 +1719,50 @@ struct ui_functions: ui_util_functions {
 		else if (is_live_game_mode) draw_live_ui(data, data_pitch);
 	}
 
+	// Draws a compact debug overlay in the top-left corner: frame number,
+	// draw FPS and current game speed multiplier.  Toggled by F3.
+	void draw_debug_overlay(uint8_t* data, size_t data_pitch) {
+		const int x = 4;
+		const int y = 4;
+		// Background box: 4 rows of 7-segment digits (8px wide, 11px tall each)
+		// plus 2px padding.  Row layout: frame, fps, speed_num, speed_den.
+		const int box_w = 96;
+		const int box_h = 4 * 13 + 4;
+		rect box{xy(x - 2, y - 2), xy(x - 2 + box_w, y - 2 + box_h)};
+		// Clamp to screen bounds.
+		if (box.to.x > (int)screen_width)  box.to.x = (int)screen_width;
+		if (box.to.y > (int)screen_height) box.to.y = (int)screen_height;
+		fill_rectangle(data, data_pitch, box, 0);
+		line_rectangle(data, data_pitch, box, 14);
+
+		int frame = st.current_frame;
+		draw_small_number(data, data_pitch, xy(x, y + 0 * 13), frame, 1, 255);
+
+		int fps = fps_draw_last;
+		draw_small_number(data, data_pitch, xy(x, y + 1 * 13), fps, 2, 117);
+
+		// Display game speed as a fraction of normal (fp8 integer(1) == normal).
+		// Normal = 1x, 2x, 4x … up to 128x; or 1/2x displayed as the raw
+		// fp8 numerator over 256.
+		int speed_num = game_speed.raw_value;
+		int speed_den = 256;
+		// Simplify by dividing out common factor of 256 for integer speeds.
+		if (speed_num > 0 && (speed_num & 0xff) == 0) {
+			speed_num >>= 8;
+			speed_den = 1;
+		}
+		draw_small_number(data, data_pitch, xy(x, y + 2 * 13), speed_num, 1, 140);
+		if (speed_den > 1) {
+			draw_small_number(data, data_pitch, xy(x + 24, y + 2 * 13), speed_den, 1, 50);
+		}
+
+		// Paused indicator: a solid bright block in row 3.
+		if (is_paused) {
+			fill_rectangle(data, data_pitch,
+				rect{xy(x, y + 3 * 13), xy(x + 16, y + 3 * 13 + 9)}, 162);
+		}
+	}
+
 	virtual void draw_callback(uint8_t* data, size_t data_pitch) {
 	}
 
@@ -1919,6 +1963,8 @@ struct ui_functions: ui_util_functions {
 
 	fp8 game_speed = fp8::integer(1);
 
+	bool show_debug_overlay = false;
+
 	std::unique_ptr<native_window_drawing::surface> window_surface;
 	std::unique_ptr<native_window_drawing::surface> indexed_surface;
 	std::unique_ptr<native_window_drawing::surface> rgba_surface;
@@ -1928,6 +1974,9 @@ struct ui_functions: ui_util_functions {
 	std::chrono::high_resolution_clock::time_point last_input_poll;
 	std::chrono::high_resolution_clock::time_point last_fps;
 	int fps_counter = 0;
+	// Smoothed draw FPS tracked independently from the sim fps_counter.
+	int fps_draw_counter = 0;
+	int fps_draw_last = 0;
 	size_t scroll_speed_n = 0;
 
 	void resize(int width, int height) {
@@ -3122,10 +3171,13 @@ struct ui_functions: ui_util_functions {
 
 		if (now - last_fps >= std::chrono::seconds(1)) {
 			//ui::log("draw fps: %g\n", fps_counter / std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1, 1>>>(now - last_fps).count());
+			fps_draw_last = fps_draw_counter;
 			last_fps = now;
 			fps_counter = 0;
+			fps_draw_counter = 0;
 		}
 		++fps_counter;
+		++fps_draw_counter;
 
 		auto minimap_area = get_minimap_area();
 		auto replay_slider_area = get_replay_slider_area();
@@ -3320,20 +3372,25 @@ struct ui_functions: ui_util_functions {
 					//	use_new_images = !use_new_images;
 					//}
 #ifndef EMSCRIPTEN
-					if (e.sym == ' ' || e.sym == 'p') {
-						is_paused = !is_paused;
-					}
-					if (!is_live_game_mode && (e.sym == 'a' || e.sym == 'u')) {
-						if (game_speed < fp8::integer(128)) game_speed *= 2;
-					}
-					if (e.sym == 'z' || e.sym == 'd') {
-						if (game_speed > 2_fp8) game_speed /= 2;
-					}
-					if (is_replay_mode && e.sym == '\b') {
-						int t = 5 * 42 / 1000;
-						if (replay_frame < t) replay_frame = 0;
-						else replay_frame -= t;
-					}
+				if (e.sym == ' ' || e.sym == 'p') {
+					is_paused = !is_paused;
+				}
+				if (!is_live_game_mode && (e.sym == 'a' || e.sym == 'u')) {
+					if (game_speed < fp8::integer(128)) game_speed *= 2;
+				}
+				if (e.sym == 'z' || e.sym == 'd') {
+					if (game_speed > 2_fp8) game_speed /= 2;
+				}
+				if (is_replay_mode && e.sym == '\b') {
+					int t = 5 * 42 / 1000;
+					if (replay_frame < t) replay_frame = 0;
+					else replay_frame -= t;
+				}
+				// F3 (scancode 60) toggles the debug overlay in all modes.
+				if (e.scancode == 60) {
+					show_debug_overlay = !show_debug_overlay;
+					ui::log("debug overlay %s\n", show_debug_overlay ? "enabled" : "disabled");
+				}
 					if (is_live_game_mode && has_local_player()) {
 						bool ctrl = wnd.get_key_state(224) || wnd.get_key_state(228);
 						bool shift = wnd.get_key_state(225) || wnd.get_key_state(229);
@@ -3482,6 +3539,7 @@ struct ui_functions: ui_util_functions {
 		if (draw_ui_elements) {
 			draw_minimap(data, indexed_surface->pitch);
 			draw_ui(data, indexed_surface->pitch);
+			if (show_debug_overlay) draw_debug_overlay(data, indexed_surface->pitch);
 		}
 		indexed_surface->unlock();
 
