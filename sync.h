@@ -111,6 +111,8 @@ struct sync_state {
 	std::array<uint32_t, 4> insync_hash{};
 	uint8_t insync_hash_index = 0;
 
+	a_vector<desync_report> desync_reports;
+	bool desync_detected = false;
 };
 
 struct sync_server_noop {
@@ -612,6 +614,7 @@ struct sync_functions: action_functions {
 				hash ^= (uint32_t)v;
 				hash *= 16777619u;
 			};
+			add(st.current_frame);
 			add(sync_st.successful_action_count);
 			add(sync_st.failed_action_count);
 			add(st.lcg_rand_state);
@@ -626,6 +629,8 @@ struct sync_functions: action_functions {
 				add((u->shield_points + u->hp).raw_value);
 				add(u->exact_position.x.raw_value);
 				add(u->exact_position.y.raw_value);
+				add(u->owner);
+				add((int)u->order_type->id);
 			}
 
 			if (sync_st.insync_hash_index == sync_st.insync_hash.size() - 1) sync_st.insync_hash_index = 0;
@@ -780,6 +785,15 @@ struct sync_functions: action_functions {
 									uint8_t index = r.template get<uint8_t>();
 									uint32_t hash = r.template get<uint32_t>();
 									if (hash != sync_st.insync_hash.at(index)) {
+										desync_report report;
+										report.local_frame = st.current_frame;
+										report.hash_index = index;
+										report.expected_hash = sync_st.insync_hash.at(index);
+										report.received_hash = hash;
+										report.client_local_id = client->local_id;
+										report.client_player_slot = client->player_slot;
+										sync_st.desync_reports.push_back(report);
+										sync_st.desync_detected = true;
 										this->kill_client(client);
 									}
 									break;
