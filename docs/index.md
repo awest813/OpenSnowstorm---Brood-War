@@ -5,6 +5,7 @@
 - **Modernization plan (detailed)**: `modernization-roadmap.md`
 - **Phase 1 notes**: `phase-1-kickoff.md`
 - **Phase 2 notes**: `phase-2-kickoff.md`
+- **Phase 3 notes**: `phase-3-kickoff.md`
 
 Project-level docs live at the repo root:
 

@@ -16,7 +16,7 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 
 | Area | Why it matters | Status | Notes / next step |
 |---|---|---|---|
-| Core simulation determinism | Replay and sync correctness depend on frame-identical outcomes. | **In progress** | Insync hash now includes frame counter, unit owner, and order type for finer divergence detection. Expand replay-based hash regression checks in CI. |
+| Core simulation determinism | Replay and sync correctness depend on frame-identical outcomes. | **Partially validated** | Insync hash now includes frame counter, unit owner, and order type for finer divergence detection. `gfxtest --record-hashes` and `--verify-hashes` provide replay fixture checkpoints; next step is enforcing them in CI. |
 | Order/AI behavior parity | Unit command edge-cases drive real gameplay differences. | **In progress** | Patrol (action 29) and building Land (action 36) are now dispatched. Continue with remaining BW-specific actions. |
 | Combat and damage interactions | Small damage/timing mismatches cascade into macro-level divergence. | **Planned** | Start fixture scenarios for cooldown timing, armor/upgrade interactions, splash behavior. |
 | Economy timings | Worker and production timing parity is essential for bots and replays. | **Partially validated** | Starting gas is now loaded from replays and applied via `setup_info.starting_gas`. Resource-type-1 custom starts correctly set both minerals and gas. |
@@ -56,6 +56,7 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | Graceful skip for unknown actions | `actions.h` | Unknown action IDs log a warning and consume remaining frame-chunk bytes instead of crashing. |
 | `read_action_skip<N>` template | `actions.h` | Zero-simulation skip for observer-only actions with known payload sizes. |
 | Actions 55–58, 60–62, 70–71, 89, 91 | `actions.h` | Save/load game, restart, game-speed changes, pause/resume, vision toggle, allied-victory toggle, and BW replay markers are now consumed cleanly. |
+| Replay hash fixture tooling | `ui/gfxtest.cpp` | `--record-hashes` emits deterministic frame-hash fixtures at configurable intervals; `--verify-hashes` asserts replay checkpoints against those fixtures. |
 
 ### Validation command (Phase 2 replay sanity check)
 
@@ -63,17 +64,24 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 - Expected pass signal: output contains `validate: PASS` and process exits `0`.
 - Expected fail signal: output contains `validate: FAIL (...)` and process exits non-zero.
 
+### Validation command (Phase 3 determinism checkpoints)
+
+- Record fixture: `./gfxtest --record-hashes <fixture.txt> --hash-interval 240 --replay <path/to/replay.rep>`
+- Verify fixture: `./gfxtest --verify-hashes <fixture.txt> --replay <path/to/replay.rep>`
+- Expected pass signal: output contains `verify-hashes: PASS` and process exits `0`.
+- Expected fail signal: output contains `verify-hashes: FAIL (...)` or mismatch lines and exits non-zero.
+
 ## Immediate backlog (starter slice)
 
 1. Add a small set of deterministic replay fixtures that exercise high-risk command and combat cases.
-2. Record frame hash checkpoints and a compact invariant report for each fixture.
-3. Gate fixture checks in CI as non-optional compatibility regressions.
+2. Gate fixture checks in CI as non-optional compatibility regressions.
+3. Expand each fixture with compact invariant summaries (player resources, unit counts, etc.) alongside hashes.
 4. Expand this tracker with links to concrete tests/checks as they land.
 
 ## Next steps
 
 1. Commit a small test replay to `maps/test.rep` and enable the CI `validate-replay` gate.
-2. Record frame-hash checkpoints for the test replay and add a `--verify-hashes` mode.
+2. Add `maps/test.hashes` produced by `--record-hashes` and run `--verify-hashes` in CI.
 3. Extend `desync_report` with a recent action-history ring buffer for deeper triage.
 4. Begin combat fixture scenarios for damage-type / armor / splash edge cases.
 5. Cover remaining BW action IDs (59, 63–69, 72–86) with proper payload-size skip entries.

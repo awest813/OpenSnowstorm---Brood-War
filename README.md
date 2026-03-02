@@ -41,6 +41,7 @@ OpenSnowstorm has the same ambition for **StarCraft: Brood War**:
 | SDL2 UI (replay viewer) | Functional |
 | Headless / benchmark mode | Added (see `--bench`, `--headless`) |
 | Replay validation sanity check | Added (see `--validate-replay`) |
+| Replay hash fixtures (record/verify) | Added (see `--record-hashes`, `--verify-hashes`) |
 | Automated determinism test suite | Planned (Phase 0) |
 | Full game client (lobby, matchmaking) | Long-term roadmap |
 
@@ -70,6 +71,8 @@ OpenSnowstorm has the same ambition for **StarCraft: Brood War**:
   - Supports `--bench <frames>` for headless simulation benchmarking
   - Supports `--headless` for simulation without rendering
   - Supports `--validate-replay` for replay header/frame-stream validation
+  - Supports `--record-hashes <fixture.txt>` to generate frame-hash checkpoints
+  - Supports `--verify-hashes <fixture.txt>` to assert deterministic checkpoints
   - Supports `--replay <file>` to specify the replay to load
 - **BWAPI shim**
   - `mini-openbwapi/`: lightweight BWAPI-compatible wrapper for engine embedding
@@ -125,6 +128,26 @@ cmake --build build/ui -j
 Expected result:
 - `validate: PASS` with replay summary details on success (exit code `0`)
 - `validate: FAIL (...)` on malformed/incompatible replay data (non-zero exit code)
+
+### Replay hash fixture record + verify
+
+```bash
+# Record checkpoints every 240 frames into a fixture file
+./gfxtest --record-hashes maps/test.hashes --hash-interval 240 --replay maps/myrep.rep
+
+# Verify replay state hashes against the fixture file
+./gfxtest --verify-hashes maps/test.hashes --replay maps/myrep.rep
+```
+
+Fixture format (`maps/test.hashes`):
+
+```text
+# OpenSnowstorm replay hash fixture v1
+replay: maps/myrep.rep
+# frame hash
+0 0x12345678
+240 0x90abcdef
+```
 
 ### Headless simulation (SDL window hidden, simulation only)
 
