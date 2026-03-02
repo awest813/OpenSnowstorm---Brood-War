@@ -26,10 +26,10 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 ## Current phase focus
 
 - **Phase 1** established protocol/constants decomposition foundations (`sync_protocol.h`, `simulation_constants.h`).
-- **Phase 2 kickoff** is now tracked in `phase-2-kickoff.md` with concrete sync/replay reliability slices and exit criteria.
-- **Phase 2 systems overhaul** landed the following concrete compatibility improvements:
+- **Phase 2 kickoff** is tracked in `phase-2-kickoff.md` with concrete sync/replay reliability slices and exit criteria.
+- **Phase 3 kickoff** is tracked in `phase-3-kickoff.md` covering CI infrastructure, BW action completions, and desync diagnostics.
 
-### Changes landed
+### Changes landed (Phase 2)
 
 | Change | Files | What it enables |
 |---|---|---|
@@ -42,6 +42,20 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | Desync report emission | `sync.h` | On insync mismatch, a `desync_report` is appended to `sync_state::desync_reports` and `desync_detected` is set before the client is killed. |
 | Richer insync hash | `sync.h` | Hash now includes `current_frame`, unit `owner`, and `order_type->id` for each visible unit, improving divergence granularity. |
 | Replay validation command | `ui/gfxtest.cpp` | `--validate-replay` performs replay load/header checks plus action frame-stream consistency validation and returns non-zero on failure. |
+
+### Changes landed (Phase 3 kickoff)
+
+| Change | Files | What it enables |
+|---|---|---|
+| Top-level `CMakeLists.txt` | `CMakeLists.txt` | Single-command configure+build for `gfxtest` and `mini-openbwapi` from the repository root. |
+| `CMakePresets.json` | `CMakePresets.json` | Named presets: Debug/Release × GCC/Clang and a headless `no-ui` preset. |
+| GitHub Actions CI | `.github/workflows/ci.yml` | Automated Linux build matrix (gcc + clang, Debug + Release); `validate-replay` gate template included. |
+| `sync_protocol_min_peer_version` | `sync_protocol.h` | Explicit minimum peer version for handshake rejection; inline compatibility policy documentation. |
+| `write_desync_reports()` | `sync_protocol.h` | Structured `key: value` desync output to any `FILE*` sink (stderr by default) for CI consumption. |
+| Automatic stderr desync emission | `sync.h` | `write_desync_reports(stderr, …)` called on every insync mismatch before killing the diverging client. |
+| Graceful skip for unknown actions | `actions.h` | Unknown action IDs log a warning and consume remaining frame-chunk bytes instead of crashing. |
+| `read_action_skip<N>` template | `actions.h` | Zero-simulation skip for observer-only actions with known payload sizes. |
+| Actions 55–58, 60–62, 70–71, 89, 91 | `actions.h` | Save/load game, restart, game-speed changes, pause/resume, vision toggle, allied-victory toggle, and BW replay markers are now consumed cleanly. |
 
 ### Validation command (Phase 2 replay sanity check)
 
@@ -58,10 +72,11 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 
 ## Next steps
 
-1. Add remaining missing BW replay actions (game-speed changes, vision toggles) behind graceful skip paths.
-2. Promote `--validate-replay` into CI as a non-optional compatibility gate.
-3. Wire `desync_report` into a log-file or stderr formatter for CI consumption.
+1. Commit a small test replay to `maps/test.rep` and enable the CI `validate-replay` gate.
+2. Record frame-hash checkpoints for the test replay and add a `--verify-hashes` mode.
+3. Extend `desync_report` with a recent action-history ring buffer for deeper triage.
 4. Begin combat fixture scenarios for damage-type / armor / splash edge cases.
+5. Cover remaining BW action IDs (59, 63–69, 72–86) with proper payload-size skip entries.
 
 ## Definition of done for each compatibility slice
 

@@ -782,22 +782,25 @@ struct sync_functions: action_functions {
 								int id = r.template get<uint8_t>();
 								switch (id) {
 								case sync_messages::id_insync_check: {
-									uint8_t index = r.template get<uint8_t>();
-									uint32_t hash = r.template get<uint32_t>();
-									if (hash != sync_st.insync_hash.at(index)) {
-										desync_report report;
-										report.local_frame = st.current_frame;
-										report.hash_index = index;
-										report.expected_hash = sync_st.insync_hash.at(index);
-										report.received_hash = hash;
-										report.client_local_id = client->local_id;
-										report.client_player_slot = client->player_slot;
-										sync_st.desync_reports.push_back(report);
-										sync_st.desync_detected = true;
-										this->kill_client(client);
-									}
-									break;
+								uint8_t index = r.template get<uint8_t>();
+								uint32_t hash = r.template get<uint32_t>();
+								if (hash != sync_st.insync_hash.at(index)) {
+									desync_report report;
+									report.local_frame = st.current_frame;
+									report.hash_index = index;
+									report.expected_hash = sync_st.insync_hash.at(index);
+									report.received_hash = hash;
+									report.client_local_id = client->local_id;
+									report.client_player_slot = client->player_slot;
+									sync_st.desync_reports.push_back(report);
+									sync_st.desync_detected = true;
+									// Emit a structured diagnostic to stderr so CI logs
+									// and crash reports capture the divergence context.
+									write_desync_reports(stderr, &report, 1);
+									this->kill_client(client);
 								}
+								break;
+							}
 								case sync_messages::id_create_unit: {
 									const unit_type_t* unit_type = funcs.get_unit_type((UnitTypes)r.template get<uint32_t>());
 									int x = r.template get<int32_t>();

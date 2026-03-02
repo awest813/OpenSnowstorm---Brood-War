@@ -3,6 +3,9 @@
 
 #include "bwgame.h"
 
+#include <cstddef>
+#include <cstdio>
+
 namespace bwgame {
 
 struct action_state {
@@ -1265,6 +1268,24 @@ struct action_functions: state_functions {
 		return action_stim_pack(owner);
 	}
 
+	// Generic skip helper for BW replay actions that are not simulated.
+	// N is the exact payload size in bytes after the action-id byte.
+	// Consumes exactly N bytes and returns false (action not applied).
+	template<size_t N, typename reader_T>
+	bool read_action_skip(int /*owner*/, reader_T&& r, int action_id) {
+		if (N > 0) {
+			if (r.left() < N) {
+				fprintf(stderr,
+					"[action] skip action id=%d: expected %zu byte(s) but only %zu remain\n",
+					action_id, N, r.left());
+				if (r.left() > 0) r.get_n(r.left());
+			} else {
+				r.get_n(N);
+			}
+		}
+		return false;
+	}
+
 	template<typename reader_T>
 	bool read_action_cancel_nuke(int owner, reader_T&& r) {
 		return action_cancel_nuke(owner);
@@ -1482,18 +1503,67 @@ struct action_functions: state_functions {
 			return read_action_morph_building(owner, r);
 		case 54:
 			return read_action_stim_pack(owner, r);
+		// Actions 55-86: various BW observer/lobby actions that do not affect
+		// deterministic simulation state.  Consume the known payload bytes and
+		// return without error so replay playback can continue.
+		case 55:
+			// Save game: 33-byte null-terminated filename.
+			return read_action_skip<33>(owner, r, 55);
+		case 56:
+			// Load saved game: 33-byte null-terminated filename.
+			return read_action_skip<33>(owner, r, 56);
+		case 57:
+			// Restart scenario: no payload.
+			return read_action_skip<0>(owner, r, 57);
+		case 58:
+			// Make game public: no payload.
+			return read_action_skip<0>(owner, r, 58);
+		case 60:
+			// Game speed change: 1-byte speed value (0 = Slowest … 6 = Fastest).
+			// Affects replay playback rate only, not simulation state.
+			return read_action_skip<1>(owner, r, 60);
+		case 61:
+			// Pause game: no simulation payload.
+			return read_action_skip<0>(owner, r, 61);
+		case 62:
+			// Resume game: no simulation payload.
+			return read_action_skip<0>(owner, r, 62);
+		case 70:
+			// Vision toggle (observer vision sharing): 2-byte flags word.
+			// A complementary path to action 13; affects only the observer view.
+			return read_action_skip<2>(owner, r, 70);
+		case 71:
+			// Allied victory toggle: 1-byte flag.
+			return read_action_skip<1>(owner, r, 71);
 		case 87:
 			return read_action_player_leave(owner, r);
 		case 88:
 			return read_action_ping_minimap(owner, r);
+		case 89:
+			// BW-specific replay marker: no payload.
+			return read_action_skip<0>(owner, r, 89);
 		case 90:
 			return read_action_morph_dark_archon(owner, r);
+		case 91:
+			// BW-specific replay marker: no payload.
+			return read_action_skip<0>(owner, r, 91);
 		case 92:
 			return read_action_chat(owner, r);
 		case 210:
 			return read_action_ext_cheat(owner, r);
-		default:
-			error("execute_action: unknown action %d", action_id);
+		default: {
+			// Unknown or future action ID.  Log to stderr and consume all
+			// remaining bytes in the current frame chunk so the simulation
+			// can continue without crashing.  Any actions that follow the
+			// unknown one in the same chunk are also skipped.
+			size_t remaining = r.left();
+			fprintf(stderr,
+				"[action] unknown action id=%d frame=%d owner=%d; "
+				"skipping %zu trailing byte(s) in chunk\n",
+				action_id, st.current_frame, owner, remaining);
+			if (remaining > 0) r.get_n(remaining);
+			return false;
+		}
 		}
 		return false;
 	}

@@ -169,6 +169,17 @@ struct main_t {
 
 main_t* g_m = nullptr;
 
+#ifdef EMSCRIPTEN
+
+// ---------------------------------------------------------------------------
+// Emscripten-only: custom allocator with memory-pressure eviction.
+//
+// Emscripten exposes dlmalloc/dlfree as its internal allocator API, which
+// lets us track live allocation sizes and evict saved states when the WASM
+// heap is under pressure.  On native platforms the system allocator is used
+// directly and this whole section is excluded.
+// ---------------------------------------------------------------------------
+
 uint32_t freemem_rand_state = (uint32_t)std::chrono::high_resolution_clock::now().time_since_epoch().count();
 auto freemem_rand() {
 	freemem_rand_state = freemem_rand_state * 22695477 + 1;
@@ -177,10 +188,8 @@ auto freemem_rand() {
 
 void out_of_memory() {
 	printf("out of memory :(\n");
-#ifdef EMSCRIPTEN
 	const char* p = "out of memory :(";
 	EM_ASM_({js_fatal_error($0);}, p);
-#endif
 	throw std::bad_alloc();
 }
 
@@ -189,7 +198,7 @@ size_t bytes_allocated = 0;
 void free_memory() {
 	if (!g_m) out_of_memory();
 	size_t n_states = g_m->saved_states.size();
-	printf("n_states is %d\n", n_states);
+	printf("n_states is %zu\n", n_states);
 	if (n_states <= 2) out_of_memory();
 	size_t n;
 	// For large collections use random eviction (O(1)); for small collections use
@@ -217,13 +226,6 @@ void free_memory() {
 	g_m->saved_states.erase(std::next(g_m->saved_states.begin(), n));
 }
 
-//extern "C" void set_malloc_fail_handler(bool(*)());
-
-//bool malloc_fail_handler() {
-//	free_memory();
-//	return true;
-//}
-
 struct dlmalloc_chunk {
 	size_t prev_foot;
 	size_t head;
@@ -244,7 +246,7 @@ size_t max_bytes_allocated = 160 * 1024 * 1024;
 extern "C" void* malloc(size_t n) {
 	void* r = dlmalloc(n);
 	while (!r) {
-		printf("failed to allocate %d bytes\n", n);
+		printf("failed to allocate %zu bytes\n", n);
 		free_memory();
 		r = dlmalloc(n);
 	}
@@ -259,7 +261,7 @@ extern "C" void free(void* ptr) {
 	dlfree(ptr);
 }
 
-#ifdef EMSCRIPTEN
+// Emscripten JS file-reader and entry point continue below.
 
 namespace bwgame {
 namespace data_loading {
