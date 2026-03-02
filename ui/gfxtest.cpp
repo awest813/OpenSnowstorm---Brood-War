@@ -1192,10 +1192,13 @@ static void print_usage(const char* argv0) {
 		"  %s --verify-hashes <fixture.txt> [--replay <file.rep>]\n"
 		"\n"
 		"single-player controls (map mode):\n"
-		"  left drag/select    right click issue order    middle drag camera\n"
+		"  left drag/select    left click command panel   middle drag camera\n"
+		"  left click map place armed building\n"
+		"  right click issue order (or cancel armed building)\n"
 		"  s stop              h hold position            a attack-move (next right click)\n"
 		"  t patrol (next right click)\n"
 		"  ctrl+<1-0> set group   shift+<1-0> add group   <1-0> recall group\n"
+		"  esc cancel armed building placement\n"
 		"  space/p pause       u speed up                 z/d speed down\n",
 		argv0, argv0, argv0, argv0, argv0, argv0);
 }

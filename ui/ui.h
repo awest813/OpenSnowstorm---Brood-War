@@ -1462,7 +1462,99 @@ struct ui_functions: ui_util_functions {
 		return r;
 	}
 
-	void draw_ui(uint8_t* data, size_t data_pitch) {
+	rect get_live_ui_area() const {
+		if (!is_live_game_mode || !has_local_player()) return {};
+		int width = 168;
+		int height = 146;
+		rect r;
+		r.from.x = (int)screen_width - 8 - width;
+		r.from.y = (int)screen_height - 8 - height;
+		r.to = r.from + xy(width, height);
+		if (r.from.x < 0 || r.from.y < 0) return {};
+		return r;
+	}
+
+	rect get_live_command_slot_area(size_t slot_n) const {
+		if (slot_n >= live_command_slots_n) return {};
+		auto area = get_live_ui_area();
+		if (area == rect{}) return {};
+		int col = (int)(slot_n % 4);
+		int row = (int)(slot_n / 4);
+		int slot_w = 34;
+		int slot_h = 34;
+		int gap = 2;
+		int x = area.from.x + 8 + col * (slot_w + gap);
+		int y = area.from.y + 30 + row * (slot_h + gap);
+		return rect{xy(x, y), xy(x + slot_w, y + slot_h)};
+	}
+
+	size_t live_command_slot_at(int mouse_x, int mouse_y) const {
+		for (size_t i = 0; i != live_command_slots_n; ++i) {
+			auto r = get_live_command_slot_area(i);
+			if (r == rect{}) continue;
+			if (point_in_rect(r, mouse_x, mouse_y)) return i;
+		}
+		return (size_t)-1;
+	}
+
+	bool live_ui_handles_left_click(int mouse_x, int mouse_y) {
+		auto area = get_live_ui_area();
+		if (area == rect{}) return false;
+		if (!point_in_rect(area, mouse_x, mouse_y)) return false;
+
+		size_t slot_n = live_command_slot_at(mouse_x, mouse_y);
+		if (slot_n != (size_t)-1) {
+			if (slot_n < live_commands.size()) {
+				execute_live_command(slot_n);
+			}
+		}
+		return true;
+	}
+
+	void draw_digit_7seg(uint8_t* data, size_t data_pitch, xy p, int digit, uint8_t color) {
+		static const uint8_t masks[10] = {
+			0b0111111, // 0
+			0b0000110, // 1
+			0b1011011, // 2
+			0b1001111, // 3
+			0b1100110, // 4
+			0b1101101, // 5
+			0b1111101, // 6
+			0b0000111, // 7
+			0b1111111, // 8
+			0b1101111  // 9
+		};
+		if (digit < 0 || digit > 9) return;
+		uint8_t mask = masks[digit];
+		auto seg = [&](int bit, rect r) {
+			if (mask & (1u << bit)) fill_rectangle(data, data_pitch, r, color);
+		};
+		// a,b,c,d,e,f,g
+		seg(0, rect{p + xy(1, 0), p + xy(6, 1)});
+		seg(1, rect{p + xy(6, 1), p + xy(7, 5)});
+		seg(2, rect{p + xy(6, 6), p + xy(7, 10)});
+		seg(3, rect{p + xy(1, 10), p + xy(6, 11)});
+		seg(4, rect{p + xy(0, 6), p + xy(1, 10)});
+		seg(5, rect{p + xy(0, 1), p + xy(1, 5)});
+		seg(6, rect{p + xy(1, 5), p + xy(6, 6)});
+	}
+
+	void draw_small_number(uint8_t* data, size_t data_pitch, xy p, int value, int min_digits, uint8_t color) {
+		if (value < 0) value = 0;
+		int digits[8] = {};
+		int n_digits = 0;
+		do {
+			digits[n_digits++] = value % 10;
+			value /= 10;
+		} while (value && n_digits < 8);
+		while (n_digits < min_digits && n_digits < 8) digits[n_digits++] = 0;
+		for (int i = n_digits - 1; i >= 0; --i) {
+			draw_digit_7seg(data, data_pitch, p, digits[i], color);
+			p.x += 8;
+		}
+	}
+
+	void draw_replay_slider_ui(uint8_t* data, size_t data_pitch) {
 		auto area = get_replay_slider_area();
 		if (area == rect{}) return;
 		if (replay_st.end_frame == 0) return;
@@ -1481,7 +1573,76 @@ struct ui_functions: ui_util_functions {
 
 		fill_rectangle(data, data_pitch, rect{area.from + xy(ox, 0), area.from + xy(ox, 0) + xy(button_w, button_h)}, 10);
 		line_rectangle(data, data_pitch, rect{area.from + xy(ox, 0), area.from + xy(ox, 0) + xy(button_w, button_h)}, 51);
+	}
 
+	void draw_live_ui(uint8_t* data, size_t data_pitch) {
+		refresh_live_commands_if_needed();
+		auto area = get_live_ui_area();
+		if (area == rect{}) return;
+
+		fill_rectangle(data, data_pitch, area, 1);
+		line_rectangle(data, data_pitch, area, 12);
+
+		unit_t* source = get_single_local_selected_unit();
+
+		rect hud_area{area.from + xy(4, 4), area.from + xy(area.to.x - area.from.x - 4, 26)};
+		fill_rectangle(data, data_pitch, hud_area, 0);
+		line_rectangle(data, data_pitch, hud_area, 50);
+
+		if (has_local_player()) {
+			int owner = local_player_id;
+			int minerals = st.current_minerals[owner];
+			int gas = st.current_gas[owner];
+			int supply_used_raw = st.supply_used[owner][0].raw_value + st.supply_used[owner][1].raw_value + st.supply_used[owner][2].raw_value;
+			int supply_avail_raw = st.supply_available[owner][0].raw_value + st.supply_available[owner][1].raw_value + st.supply_available[owner][2].raw_value;
+			int supply_used = supply_used_raw / 2;
+			int supply_avail = supply_avail_raw / 2;
+
+			fill_rectangle(data, data_pitch, rect{area.from + xy(8, 8), area.from + xy(13, 13)}, 111);
+			draw_small_number(data, data_pitch, area.from + xy(16, 7), minerals, 3, 255);
+
+			fill_rectangle(data, data_pitch, rect{area.from + xy(62, 8), area.from + xy(67, 13)}, 117);
+			draw_small_number(data, data_pitch, area.from + xy(70, 7), gas, 3, 255);
+
+			fill_rectangle(data, data_pitch, rect{area.from + xy(116, 8), area.from + xy(121, 13)}, 10);
+			draw_small_number(data, data_pitch, area.from + xy(124, 7), supply_used, 2, 255);
+			fill_rectangle(data, data_pitch, rect{area.from + xy(140, 11), area.from + xy(142, 13)}, 255);
+			draw_small_number(data, data_pitch, area.from + xy(145, 7), supply_avail, 2, 255);
+		}
+
+		for (size_t i = 0; i != live_command_slots_n; ++i) {
+			auto slot = get_live_command_slot_area(i);
+			if (slot == rect{}) continue;
+			fill_rectangle(data, data_pitch, slot, 3);
+			line_rectangle(data, data_pitch, slot, 50);
+			if (i >= live_commands.size()) continue;
+
+			const auto& cmd = live_commands[i];
+			bool enabled = live_command_is_enabled(cmd, source);
+			uint8_t fill = 20;
+			switch (cmd.kind) {
+			case live_command_kind_t::train: fill = 79; break;
+			case live_command_kind_t::train_fighter: fill = 81; break;
+			case live_command_kind_t::morph: fill = 93; break;
+			case live_command_kind_t::morph_building: fill = 95; break;
+			case live_command_kind_t::build_place: fill = 117; break;
+			case live_command_kind_t::research: fill = 68; break;
+			case live_command_kind_t::upgrade: fill = 54; break;
+			}
+			if (!enabled) fill = 14;
+			fill_rectangle(data, data_pitch, rect{slot.from + xy(2, 2), slot.to - xy(2, 2)}, fill);
+			if (live_build_placement_armed && cmd.kind == live_command_kind_t::build_place &&
+			    cmd.unit_type == live_build_placement_command.unit_type) {
+				line_rectangle(data, data_pitch, rect{slot.from + xy(1, 1), slot.to - xy(1, 1)}, 255);
+			}
+			int payload_id = live_command_payload_id(cmd);
+			draw_small_number(data, data_pitch, slot.from + xy(4, 21), payload_id, 3, enabled ? 255 : 51);
+		}
+	}
+
+	void draw_ui(uint8_t* data, size_t data_pitch) {
+		if (is_replay_mode) draw_replay_slider_ui(data, data_pitch);
+		else if (is_live_game_mode) draw_live_ui(data, data_pitch);
 	}
 
 	virtual void draw_callback(uint8_t* data, size_t data_pitch) {
@@ -1722,16 +1883,23 @@ struct ui_functions: ui_util_functions {
 		auto uid = get_unit_id(u);
 		if (std::find(current_selection.begin(), current_selection.end(), uid) != current_selection.end()) return;
 		current_selection.push_back(uid);
+		live_commands_dirty = true;
 	}
 
 	void current_selection_clear() {
+		if (!current_selection.empty()) live_commands_dirty = true;
 		current_selection.clear();
+		cancel_live_build_placement();
 	}
 
 	void current_selection_remove(const unit_t* u) {
 		auto uid = get_unit_id(u);
 		auto i = std::find(current_selection.begin(), current_selection.end(), uid);
-		if (i != current_selection.end()) current_selection.erase(i);
+		if (i != current_selection.end()) {
+			current_selection.erase(i);
+			live_commands_dirty = true;
+			cancel_live_build_placement();
+		}
 	}
 
 	enum class pending_order_mode_t {
@@ -1740,7 +1908,207 @@ struct ui_functions: ui_util_functions {
 		patrol
 	};
 
+	enum class live_command_kind_t {
+		train,
+		train_fighter,
+		morph,
+		morph_building,
+		build_place,
+		research,
+		upgrade
+	};
+
+	struct live_command_t {
+		live_command_kind_t kind = live_command_kind_t::train;
+		const unit_type_t* unit_type = nullptr;
+		const tech_type_t* tech_type = nullptr;
+		const upgrade_type_t* upgrade_type = nullptr;
+		const order_type_t* build_order_type = nullptr;
+	};
+
+	static constexpr size_t live_command_slots_n = 12;
+	a_vector<live_command_t> live_commands;
+	bool live_commands_dirty = true;
+	int live_commands_state_frame = -1;
+	bool live_build_placement_armed = false;
+	live_command_t live_build_placement_command;
+
 	pending_order_mode_t pending_order_mode = pending_order_mode_t::none;
+
+	void cancel_live_build_placement() {
+		live_build_placement_armed = false;
+	}
+
+	bool point_in_rect(rect r, int x, int y) const {
+		return x >= r.from.x && x < r.to.x && y >= r.from.y && y < r.to.y;
+	}
+
+	unit_t* get_single_local_selected_unit() {
+		if (!has_local_player()) return nullptr;
+		unit_t* result = nullptr;
+		for (auto uid : current_selection) {
+			unit_t* u = get_unit(uid);
+			if (!u || unit_dead(u) || us_hidden(u)) continue;
+			if (!unit_is_local_controllable(u)) continue;
+			if (result) return nullptr;
+			result = u;
+		}
+		return result;
+	}
+
+	const order_type_t* resolve_live_build_order(const unit_t* u, const unit_type_t* unit_type) const {
+		if (!u || !unit_type) return nullptr;
+		if (ut_addon(unit_type)) return get_order_type(Orders::PlaceAddon);
+		if (!ut_worker(u)) return nullptr;
+		auto race = unit_race(u);
+		if (race == race_t::terran) return get_order_type(Orders::PlaceBuilding);
+		if (race == race_t::zerg) return get_order_type(Orders::DroneStartBuild);
+		if (race == race_t::protoss) return get_order_type(Orders::PlaceProtossBuilding);
+		return nullptr;
+	}
+
+	bool live_build_placement_is_valid(unit_t* u, const live_command_t& cmd, xy_t<size_t> tile_pos) const {
+		if (!u || !cmd.unit_type || !cmd.build_order_type) return false;
+		if (!unit_build_order_valid(u, cmd.build_order_type, cmd.unit_type, local_player_id)) return false;
+		if (ut_addon(cmd.unit_type)) {
+			xy addon_pos(int(32 * tile_pos.x) + cmd.unit_type->placement_size.x / 2,
+			             int(32 * tile_pos.y) + cmd.unit_type->placement_size.y / 2);
+			if (!can_place_building(u, local_player_id, cmd.unit_type, addon_pos, false, false)) return false;
+			xy builder_pos(int(32 * tile_pos.x + u->unit_type->placement_size.x / 2),
+			               int(32 * tile_pos.y + u->unit_type->placement_size.y / 2));
+			builder_pos.x -= cmd.unit_type->addon_position.x / 32 * 32;
+			builder_pos.y -= cmd.unit_type->addon_position.y / 32 * 32;
+			return can_place_building(u, local_player_id, u->unit_type, builder_pos, false, false);
+		}
+		xy pos(int(32 * tile_pos.x) + cmd.unit_type->placement_size.x / 2,
+		       int(32 * tile_pos.y) + cmd.unit_type->placement_size.y / 2);
+		return can_place_building(u, local_player_id, cmd.unit_type, pos, false, false);
+	}
+
+	bool live_command_is_enabled(const live_command_t& cmd, const unit_t* source) const {
+		if (!source || source->owner != local_player_id) return false;
+		switch (cmd.kind) {
+		case live_command_kind_t::train:
+			return cmd.unit_type && unit_can_build(source, cmd.unit_type) && has_available_resources_for(local_player_id, cmd.unit_type);
+		case live_command_kind_t::train_fighter:
+			return cmd.unit_type && unit_can_build(source, cmd.unit_type) && has_available_resources_for(local_player_id, cmd.unit_type);
+		case live_command_kind_t::morph:
+			return cmd.unit_type && unit_can_build(source, cmd.unit_type) && has_available_resources_for(local_player_id, cmd.unit_type);
+		case live_command_kind_t::morph_building:
+			return cmd.unit_type && unit_can_build(source, cmd.unit_type) && has_available_resources_for(local_player_id, cmd.unit_type);
+		case live_command_kind_t::build_place:
+			return cmd.unit_type && cmd.build_order_type && unit_build_order_valid(source, cmd.build_order_type, cmd.unit_type, local_player_id) && has_available_resources_for(local_player_id, cmd.unit_type);
+		case live_command_kind_t::research:
+			return cmd.tech_type && unit_can_research(source, cmd.tech_type, local_player_id) && has_available_resources_for(local_player_id, cmd.tech_type);
+		case live_command_kind_t::upgrade:
+			return cmd.upgrade_type && unit_can_upgrade(source, cmd.upgrade_type, local_player_id) && has_available_resources_for(local_player_id, cmd.upgrade_type);
+		}
+		return false;
+	}
+
+	int live_command_payload_id(const live_command_t& cmd) const {
+		switch (cmd.kind) {
+		case live_command_kind_t::train:
+		case live_command_kind_t::train_fighter:
+		case live_command_kind_t::morph:
+		case live_command_kind_t::morph_building:
+		case live_command_kind_t::build_place:
+			return cmd.unit_type ? (int)cmd.unit_type->id : 0;
+		case live_command_kind_t::research:
+			return cmd.tech_type ? (int)cmd.tech_type->id : 0;
+		case live_command_kind_t::upgrade:
+			return cmd.upgrade_type ? (int)cmd.upgrade_type->id : 0;
+		}
+		return 0;
+	}
+
+	void rebuild_live_commands() {
+		live_commands.clear();
+		live_commands_dirty = false;
+
+		if (!is_live_game_mode || !has_local_player()) {
+			cancel_live_build_placement();
+			return;
+		}
+		unit_t* source = get_single_local_selected_unit();
+		if (!source || source->owner != local_player_id) {
+			cancel_live_build_placement();
+			return;
+		}
+
+		for (const auto& v : game_st.unit_types.vec) {
+			const unit_type_t* unit_type = &v;
+			if (!unit_can_build(source, unit_type)) continue;
+
+			live_command_t cmd;
+			cmd.unit_type = unit_type;
+			if (ut_building(unit_type)) {
+				if (unit_is_zerg_building(source) && unit_is_zerg_building(unit_type)) {
+					cmd.kind = live_command_kind_t::morph_building;
+				} else {
+					cmd.build_order_type = resolve_live_build_order(source, unit_type);
+					if (!cmd.build_order_type) continue;
+					cmd.kind = live_command_kind_t::build_place;
+				}
+			} else {
+				if (unit_is(source, UnitTypes::Zerg_Larva) || unit_is(source, UnitTypes::Zerg_Mutalisk) || unit_is(source, UnitTypes::Zerg_Hydralisk)) {
+					cmd.kind = live_command_kind_t::morph;
+				} else if ((unit_is_carrier(source) && unit_is(unit_type, UnitTypes::Protoss_Interceptor)) ||
+				           (unit_is_reaver(source) && unit_is(unit_type, UnitTypes::Protoss_Scarab))) {
+					cmd.kind = live_command_kind_t::train_fighter;
+				} else {
+					cmd.kind = live_command_kind_t::train;
+				}
+			}
+
+			live_commands.push_back(cmd);
+			if (live_commands.size() >= live_command_slots_n) break;
+		}
+
+		if (live_commands.size() < live_command_slots_n) {
+			for (const auto& v : game_st.tech_types.vec) {
+				const tech_type_t* tech_type = &v;
+				if (!unit_can_research(source, tech_type, local_player_id)) continue;
+				live_command_t cmd;
+				cmd.kind = live_command_kind_t::research;
+				cmd.tech_type = tech_type;
+				live_commands.push_back(cmd);
+				if (live_commands.size() >= live_command_slots_n) break;
+			}
+		}
+
+		if (live_commands.size() < live_command_slots_n) {
+			for (const auto& v : game_st.upgrade_types.vec) {
+				const upgrade_type_t* upgrade_type = &v;
+				if (!unit_can_upgrade(source, upgrade_type, local_player_id)) continue;
+				live_command_t cmd;
+				cmd.kind = live_command_kind_t::upgrade;
+				cmd.upgrade_type = upgrade_type;
+				live_commands.push_back(cmd);
+				if (live_commands.size() >= live_command_slots_n) break;
+			}
+		}
+
+		if (live_build_placement_armed) {
+			bool armed_still_present = false;
+			for (const auto& cmd : live_commands) {
+				if (cmd.kind != live_command_kind_t::build_place) continue;
+				if (cmd.unit_type != live_build_placement_command.unit_type) continue;
+				if (cmd.build_order_type != live_build_placement_command.build_order_type) continue;
+				armed_still_present = true;
+				break;
+			}
+			if (!armed_still_present) cancel_live_build_placement();
+		}
+	}
+
+	void refresh_live_commands_if_needed() {
+		if (is_live_game_mode && live_commands_state_frame != st.current_frame) {
+			live_commands_state_frame = st.current_frame;
+			live_commands_dirty = true;
+		}
+		if (live_commands_dirty) rebuild_live_commands();
+	}
 
 	bool has_local_player() const {
 		return local_player_id >= 0 && local_player_id < 8;
@@ -1800,6 +2168,83 @@ struct ui_functions: ui_util_functions {
 		return ok;
 	}
 
+	bool execute_live_command(size_t index) {
+		refresh_live_commands_if_needed();
+		if (index >= live_commands.size()) return false;
+		if (!is_live_game_mode || !has_local_player()) return false;
+
+		auto& cmd = live_commands[index];
+		unit_t* source = get_single_local_selected_unit();
+		if (!source) return false;
+		if (!live_command_is_enabled(cmd, source)) return false;
+
+		sync_action_selection_from_current();
+		if (action_st.selection.at(local_player_id).empty()) return false;
+
+		pending_order_mode = pending_order_mode_t::none;
+
+		bool ok = false;
+		switch (cmd.kind) {
+		case live_command_kind_t::train:
+			ok = action_train(local_player_id, cmd.unit_type);
+			break;
+		case live_command_kind_t::train_fighter:
+			ok = action_train_fighter(local_player_id);
+			break;
+		case live_command_kind_t::morph:
+			ok = action_morph(local_player_id, cmd.unit_type);
+			break;
+		case live_command_kind_t::morph_building:
+			ok = action_morph_building(local_player_id, cmd.unit_type);
+			break;
+		case live_command_kind_t::research:
+			ok = action_research(local_player_id, cmd.tech_type);
+			break;
+		case live_command_kind_t::upgrade:
+			ok = action_upgrade(local_player_id, cmd.upgrade_type);
+			break;
+		case live_command_kind_t::build_place:
+			if (live_build_placement_armed &&
+			    live_build_placement_command.unit_type == cmd.unit_type &&
+			    live_build_placement_command.build_order_type == cmd.build_order_type) {
+				cancel_live_build_placement();
+			} else {
+				live_build_placement_armed = true;
+				live_build_placement_command = cmd;
+			}
+			ok = true;
+			break;
+		}
+		if (ok) live_commands_dirty = true;
+		return ok;
+	}
+
+	bool try_place_live_build_command(xy map_pos) {
+		if (!live_build_placement_armed) return false;
+		if (!is_live_game_mode || !has_local_player()) return false;
+		unit_t* source = get_single_local_selected_unit();
+		if (!source) {
+			cancel_live_build_placement();
+			return false;
+		}
+
+		int tile_x = map_pos.x / 32;
+		int tile_y = map_pos.y / 32;
+		if (tile_x < 0 || tile_y < 0) return false;
+		if ((size_t)tile_x >= game_st.map_tile_width || (size_t)tile_y >= game_st.map_tile_height) return false;
+
+		xy_t<size_t> tile_pos = {(size_t)tile_x, (size_t)tile_y};
+		if (!live_build_placement_is_valid(source, live_build_placement_command, tile_pos)) return false;
+
+		sync_action_selection_from_current();
+		bool ok = action_build(local_player_id, live_build_placement_command.build_order_type, live_build_placement_command.unit_type, tile_pos);
+		if (ok) {
+			cancel_live_build_placement();
+			live_commands_dirty = true;
+		}
+		return ok;
+	}
+
 	bool is_moving_minimap = false;
 	bool is_moving_replay_slider = false;
 	bool is_paused = false;
@@ -1813,6 +2258,7 @@ struct ui_functions: ui_util_functions {
 
 	void update() {
 		auto now = clock.now();
+		refresh_live_commands_if_needed();
 
 		if (now - last_fps >= std::chrono::seconds(1)) {
 			//ui::log("draw fps: %g\n", fps_counter / std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1, 1>>>(now - last_fps).count());
@@ -1947,15 +2393,28 @@ struct ui_functions: ui_util_functions {
 					if (e.button == 1) {
 						check_move_minimap(e);
 						check_move_replay_slider(e);
-						if (!is_moving_minimap && !is_moving_replay_slider) {
-							is_drag_selecting = true;
-							drag_select_from_x = e.mouse_x;
-							drag_select_from_y = e.mouse_y;
-							drag_select_to_x = e.mouse_x;
-							drag_select_to_y = e.mouse_y;
+						bool consumed_live_ui = false;
+						if (!is_moving_minimap && !is_moving_replay_slider && is_live_game_mode) {
+							consumed_live_ui = live_ui_handles_left_click(e.mouse_x, e.mouse_y);
+						}
+						if (!is_moving_minimap && !is_moving_replay_slider && !consumed_live_ui) {
+							if (live_build_placement_armed && is_live_game_mode) {
+								try_place_live_build_command(screen_to_map_pos(e.mouse_x, e.mouse_y));
+							} else {
+								is_drag_selecting = true;
+								drag_select_from_x = e.mouse_x;
+								drag_select_from_y = e.mouse_y;
+								drag_select_to_x = e.mouse_x;
+								drag_select_to_y = e.mouse_y;
+							}
 						}
 					} else if (e.button == 3) {
 						if (is_live_game_mode) {
+							if (live_build_placement_armed) {
+								cancel_live_build_placement();
+								pending_order_mode = pending_order_mode_t::none;
+								break;
+							}
 							issue_order_at_cursor(e.mouse_x, e.mouse_y);
 							break;
 						}
@@ -2019,7 +2478,10 @@ struct ui_functions: ui_util_functions {
 						bool ctrl = wnd.get_key_state(224) || wnd.get_key_state(228);
 						bool shift = wnd.get_key_state(225) || wnd.get_key_state(229);
 
-						if (e.sym == 'u') {
+						if (e.sym == 27) {
+							cancel_live_build_placement();
+							pending_order_mode = pending_order_mode_t::none;
+						} else if (e.sym == 'u') {
 							if (game_speed < fp8::integer(128)) game_speed *= 2;
 						} else if (e.sym == 's') {
 							sync_action_selection_from_current();
@@ -2028,8 +2490,10 @@ struct ui_functions: ui_util_functions {
 							sync_action_selection_from_current();
 							action_hold_position(local_player_id, shift);
 						} else if (e.sym == 'a') {
+							cancel_live_build_placement();
 							pending_order_mode = pending_order_mode_t::attack_move;
 						} else if (e.sym == 't') {
+							cancel_live_build_placement();
 							pending_order_mode = pending_order_mode_t::patrol;
 						} else if (e.sym >= '0' && e.sym <= '9') {
 							size_t group_n = e.sym == '0' ? 9 : (size_t)(e.sym - '1');
@@ -2044,6 +2508,7 @@ struct ui_functions: ui_util_functions {
 				}
 			}
 		}
+		refresh_live_commands_if_needed();
 
 		if (!indexed_surface) {
 			if (wnd) {
@@ -2134,6 +2599,25 @@ struct ui_functions: ui_util_functions {
 				if (r.from.y > r.to.y) std::swap(r.from.y, r.to.y);
 
 				line_rectangle_rgba(data, rgba_surface->pitch / 4, r, 0xff18fc10);
+			}
+			rgba_surface->unlock();
+		} else if (live_build_placement_armed && wnd) {
+			uint32_t* data = (uint32_t*)rgba_surface->lock();
+			int mouse_x = -1;
+			int mouse_y = -1;
+			wnd.get_cursor_pos(&mouse_x, &mouse_y);
+			if (mouse_x != -1 && mouse_y != -1) {
+				xy map_pos = screen_to_map_pos(mouse_x, mouse_y);
+				int tile_x = map_pos.x / 32;
+				int tile_y = map_pos.y / 32;
+				if (tile_x >= 0 && tile_y >= 0 && (size_t)tile_x < game_st.map_tile_width && (size_t)tile_y < game_st.map_tile_height) {
+					auto* source = get_single_local_selected_unit();
+					bool can_place = source && live_build_placement_is_valid(source, live_build_placement_command, {(size_t)tile_x, (size_t)tile_y});
+					xy top_left = xy(tile_x * 32, tile_y * 32) - screen_pos;
+					xy size = live_build_placement_command.unit_type ? live_build_placement_command.unit_type->placement_size : xy(32, 32);
+					rect build_rect{top_left, top_left + size};
+					line_rectangle_rgba(data, rgba_surface->pitch / 4, build_rect, can_place ? 0xff20ff20 : 0xffd03030);
+				}
 			}
 			rgba_surface->unlock();
 		}
