@@ -226,7 +226,17 @@ struct replay_functions: action_functions {
 			source_colors[i] = st.players[i].color;
 		}
 		for (size_t i = 0; i != 8; ++i) {
-			st.players[i].color = source_colors.at(player_color[i]);
+			size_t replay_color = player_color[i];
+			if (replay_color < source_colors.size()) {
+				// Classic Brood War stores slot-based remaps for player colors.
+				st.players[i].color = source_colors[replay_color];
+			} else if (replay_color < 16) {
+				// Some Brood War-compatible tools/replays store palette indices directly.
+				st.players[i].color = (int)replay_color;
+			} else {
+				// Fall back to the map/default color to avoid invalid palette accesses.
+				st.players[i].color = source_colors[i];
+			}
 		}
 	}
 	
