@@ -28,6 +28,7 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 - **Phase 1** established protocol/constants decomposition foundations (`sync_protocol.h`, `simulation_constants.h`).
 - **Phase 2 kickoff** is tracked in `phase-2-kickoff.md` with concrete sync/replay reliability slices and exit criteria.
 - **Phase 3 kickoff** is tracked in `phase-3-kickoff.md` covering CI infrastructure, BW action completions, and desync diagnostics.
+- **Phase 4 kickoff** is tracked in `phase-4-kickoff.md` covering complete-client foundations, campaign-readiness tracking, and user-facing regression gates.
 
 ### Changes landed (Phase 2)
 

@@ -6,6 +6,7 @@
 - **Phase 1 notes**: `phase-1-kickoff.md`
 - **Phase 2 notes**: `phase-2-kickoff.md`
 - **Phase 3 notes**: `phase-3-kickoff.md`
+- **Phase 4 notes**: `phase-4-kickoff.md`
 
 Project-level docs live at the repo root:
 
