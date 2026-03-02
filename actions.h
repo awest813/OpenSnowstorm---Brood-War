@@ -649,6 +649,7 @@ struct action_functions: state_functions {
 			if (!unit_can_receive_order(u, get_order_type(Orders::Unload), owner)) continue;
 			if (loaded_units(u).empty()) continue;
 			issue_order(u, queue, get_order_type(Orders::Unload), {});
+			retval = true;
 		}
 		return retval;
 	}
@@ -814,6 +815,7 @@ struct action_functions: state_functions {
 			if (u->energy < fp8::integer(tech->energy_cost)) continue;
 			u->energy -= fp8::integer(tech->energy_cost);
 			set_secondary_order(u, get_order_type(Orders::Cloak));
+			retval = true;
 		}
 		return retval;
 	}
@@ -828,6 +830,7 @@ struct action_functions: state_functions {
 			if (!tech) continue;
 			if (!unit_can_use_tech(u, tech)) continue;
 			set_secondary_order(u, get_order_type(Orders::Decloak));
+			retval = true;
 		}
 		return retval;
 	}
