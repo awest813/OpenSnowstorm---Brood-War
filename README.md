@@ -139,7 +139,9 @@ Optional map-mode arguments:
 Controls in map mode:
 
 - **Left click/drag**: select units
-- **Right click**: issue default order
+- **Left click command panel**: issue train/morph/research/upgrade commands
+- **Left click map (while a building command is armed)**: place building
+- **Right click**: issue default order (or cancel armed building placement)
 - **Middle mouse drag**: move camera
 - **S**: stop
 - **H**: hold position
@@ -148,6 +150,7 @@ Controls in map mode:
 - **1–0**: recall control group
 - **Ctrl + 1–0**: set control group
 - **Shift + 1–0**: add to control group
+- **Esc**: cancel armed building placement
 - **Space / P**: pause
 - **U**: speed up simulation
 - **Z / D**: slow down simulation
