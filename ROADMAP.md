@@ -7,6 +7,7 @@ For deeper technical breakdowns, see:
 - `docs/modernization-roadmap.md` (detailed phased plan)
 - `docs/architecture.md` (module map / ownership model)
 - `docs/phase-1-kickoff.md` (active decomposition notes)
+- `docs/broodwar-compatibility.md` (compatibility matrix + validation backlog)
 
 ---
 
