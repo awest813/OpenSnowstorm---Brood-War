@@ -1191,7 +1191,7 @@ static void print_usage(const char* argv0) {
 		"usage:\n"
 		"  %s [--replay <file.rep>] [--headless]\n"
 		"  %s --map <file.scx|file.scm> [--local-player <0-7>] [--enemy-player <0-7>]\n"
-		"     [--game-type <melee|ums>] [--local-race <zerg|terran|protoss|random>]\n"
+		"     [--game-type <auto|melee|ums>] [--local-race <zerg|terran|protoss|random>]\n"
 		"     [--enemy-race <zerg|terran|protoss|random>] [--fog|--no-fog] [--headless]\n"
 		"     [--headless-map [<frame-limit>]]  (headless smoke test; default limit 72000)\n"
 		"     [--debug-overlay]  (show frame/fps/speed overlay on startup; also toggled by F3)\n"
@@ -1200,7 +1200,8 @@ static void print_usage(const char* argv0) {
 		"  %s --record-hashes <fixture.txt> [--hash-interval <n>] [--replay <file.rep>]\n"
 		"  %s --verify-hashes <fixture.txt> [--replay <file.rep>]\n"
 		"\n"
-		"note: --game-type ums preserves authored slot topology by default.\n"
+		"note: --game-type auto (default) selects ums for authored/campaign-like slots, else melee.\n"
+		"      --game-type ums preserves authored slot topology by default.\n"
 		"\n"
 		"single-player controls (map mode):\n"
 		"  left drag/select    left click command panel (multi tactical + single-unit production/abilities)   middle drag camera\n"
@@ -1457,7 +1458,12 @@ int main(int argc, char** argv) {
 	bool validate_replay = false;
 	bool headless = false;
 	bool show_help = false;
-	bool game_type_melee = true;
+	enum class map_game_type_t {
+		auto_detect,
+		melee,
+		ums,
+	};
+	map_game_type_t map_game_type = map_game_type_t::auto_detect;
 	bool debug_overlay = false;
 	bool map_fog_of_war = true;
 	int local_player_slot = -1;
@@ -1503,15 +1509,16 @@ int main(int argc, char** argv) {
 			}
 		} else if (strcmp(argv[i], "--game-type") == 0) {
 			if (i + 1 >= argc) {
-				log("error: --game-type requires value melee|ums\n");
+				log("error: --game-type requires value auto|melee|ums\n");
 				return 2;
 			}
 			std::string v = argv[++i];
 			for (char& c : v) c = (char)std::tolower((unsigned char)c);
-			if (v == "melee") game_type_melee = true;
-			else if (v == "ums" || v == "use_map_settings") game_type_melee = false;
+			if (v == "auto") map_game_type = map_game_type_t::auto_detect;
+			else if (v == "melee") map_game_type = map_game_type_t::melee;
+			else if (v == "ums" || v == "use_map_settings") map_game_type = map_game_type_t::ums;
 			else {
-				log("error: invalid --game-type value '%s' (expected melee|ums)\n", argv[i]);
+				log("error: invalid --game-type value '%s' (expected auto|melee|ums)\n", argv[i]);
 				return 2;
 			}
 		} else if (strcmp(argv[i], "--local-race") == 0) {
@@ -1663,7 +1670,7 @@ int main(int argc, char** argv) {
 		log("error: --map and --record-hashes cannot be used together\n");
 		return 2;
 	}
-	if ((local_player_slot != -1 || enemy_player_slot != -1 || local_race != 5 || enemy_race != 5 || !game_type_melee || !map_fog_of_war) && !map_file) {
+	if ((local_player_slot != -1 || enemy_player_slot != -1 || local_race != 5 || enemy_race != 5 || map_game_type != map_game_type_t::auto_detect || !map_fog_of_war) && !map_file) {
 		log("error: --map is required when using single-player map options\n");
 		return 2;
 	}
@@ -1726,6 +1733,7 @@ int main(int argc, char** argv) {
 
 		int selected_local = -1;
 		int selected_enemy = -1;
+		bool selected_game_type_melee = false;
 
 		game_load_functions load_funcs(ui.st);
 		load_funcs.load_map_file(map_file, [&]() {
@@ -1764,6 +1772,25 @@ int main(int argc, char** argv) {
 				}
 				return false;
 			};
+
+			bool game_type_melee = false;
+			if (map_game_type == map_game_type_t::melee) {
+				game_type_melee = true;
+			} else if (map_game_type == map_game_type_t::ums) {
+				game_type_melee = false;
+			} else {
+				bool has_authored_campaign_slots = false;
+				for (size_t v : ums_local_slots) {
+					int controller = ui.st.players[v].controller;
+					if (controller == player_t::controller_occupied || controller == player_t::controller_computer_game) {
+						has_authored_campaign_slots = true;
+						break;
+					}
+				}
+				game_type_melee = !has_authored_campaign_slots;
+			}
+
+			selected_game_type_melee = game_type_melee;
 
 			if (game_type_melee) {
 				if (melee_slots.size() < 2) {
@@ -1899,18 +1926,22 @@ int main(int argc, char** argv) {
 		ui.local_player_id = selected_local;
 		ui.enemy_player_id = selected_enemy;
 		ui.replay_frame = ui.st.current_frame;
+		const char* game_mode_name = selected_game_type_melee ? "melee" : "ums";
+		const char* mode_origin = map_game_type == map_game_type_t::auto_detect ? " (auto)" : "";
 		if (selected_enemy == -1) {
-			log("single-player: map='%s' local_slot=%d enemy_slot=none mode=%s fog=%s\n",
+			log("single-player: map='%s' local_slot=%d enemy_slot=none mode=%s%s fog=%s\n",
 				map_file,
 				selected_local,
-				game_type_melee ? "melee" : "ums",
+				game_mode_name,
+				mode_origin,
 				map_fog_of_war ? "on" : "off");
 		} else {
-			log("single-player: map='%s' local_slot=%d enemy_slot=%d mode=%s fog=%s\n",
+			log("single-player: map='%s' local_slot=%d enemy_slot=%d mode=%s%s fog=%s\n",
 				map_file,
 				selected_local,
 				selected_enemy,
-				game_type_melee ? "melee" : "ums",
+				game_mode_name,
+				mode_origin,
 				map_fog_of_war ? "on" : "off");
 		}
 	} else {
