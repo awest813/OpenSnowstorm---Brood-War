@@ -78,6 +78,7 @@ struct main_t {
 	bool live_result_reported = false;
 
 	a_map<int, std::unique_ptr<saved_state>> saved_states;
+	std::unique_ptr<saved_state> quicksave_slot;
 
 	void save_replay_state_if_missing(int frame) {
 		auto i = saved_states.find(frame);
@@ -204,15 +205,44 @@ struct main_t {
 			if (!live_result_reported && ui.has_local_player()) {
 				if (ui.player_won(ui.local_player_id)) {
 					live_result_reported = true;
+					ui.is_paused = true;
 					log("single-player: victory at frame %d\n", ui.st.current_frame);
 				} else if (ui.player_defeated(ui.local_player_id)) {
 					live_result_reported = true;
+					ui.is_paused = true;
 					log("single-player: defeat at frame %d\n", ui.st.current_frame);
 				}
 			}
 		}
 
 		ui.update();
+
+		// Quicksave/quickload are armed by F5/F8 inside ui.update() and
+		// fulfilled here where we can safely deep-copy the game state.
+		if (ui.quicksave_pending) {
+			ui.quicksave_pending = false;
+			auto v = std::make_unique<saved_state>();
+			v->st = copy_state(ui.st);
+			v->action_st = copy_state(ui.action_st, ui.st, v->st);
+			v->apm = ui.apm;
+			quicksave_slot = std::move(v);
+			log("quicksave: saved at frame %d\n", ui.st.current_frame);
+		}
+		if (ui.quickload_pending) {
+			ui.quickload_pending = false;
+			if (quicksave_slot) {
+				ui.st = copy_state(quicksave_slot->st);
+				ui.action_st = copy_state(quicksave_slot->action_st, quicksave_slot->st, ui.st);
+				ui.apm = quicksave_slot->apm;
+				ui.replay_frame = ui.st.current_frame;
+				// Reset result latch so victory/defeat is re-detected and the
+				// game auto-pauses again if the player reaches it a second time.
+				live_result_reported = false;
+				log("quickload: restored to frame %d\n", ui.st.current_frame);
+			} else {
+				log("quickload: no save available\n");
+			}
+		}
 	}
 };
 
@@ -1217,6 +1247,7 @@ static void print_usage(const char* argv0) {
 		"  esc cancel armed building / landing / spell targeting\n"
 		"  f toggle fog of war\n"
 		"  F3 toggle debug overlay (frame counter, draw fps, game speed)\n"
+		"  F5 quicksave (in-memory)   F8 quickload (restores last quicksave)\n"
 		"  space/p pause       u speed up                 z/d speed down\n"
 		"\n"
 		"spell targeting (command panel or ability hotkey arms a targeting mode):\n"

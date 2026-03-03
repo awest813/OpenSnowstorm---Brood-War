@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmini-openbwapi.a "CMakeFiles/mini-openbwapi.dir/openbwapi.cpp.o"
+/usr/bin/ranlib libmini-openbwapi.a
