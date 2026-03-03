@@ -101,6 +101,10 @@ Concretely, "success" means:
   - Local unit control path includes selection, default right-click orders, stop/hold, attack-move/patrol target modes, and control groups.
   - Local-vision rendering path (fog/explored filtering for terrain, sprites, and minimap) is now wired for non-observer play.
   - This is a foundation milestone, not full UX parity with Brood War's campaign/lobby frontend.
+- **Campaign progress estimate (current)**
+  - Roughly **~35% complete** toward a "somewhat playable" campaign experience.
+  - Interpreting "somewhat playable" as: a user can start a campaign mission chain, play through core objectives, and progress with basic save/load.
+  - Biggest remaining critical path items: trigger/event completeness, briefing/debrief flow, and campaign persistence UX.
 - **Campaign engine**
   - Trigger system completeness (all StarEdit triggers)
   - Briefing room support

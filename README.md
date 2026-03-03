@@ -47,6 +47,25 @@ OpenSnowstorm has the same ambition for **StarCraft: Brood War**:
 | Automated determinism test suite | Planned (Phase 0) |
 | Full game client (lobby, matchmaking) | Long-term roadmap |
 
+### Campaign playability snapshot ("somewhat playable")
+
+Current rough estimate: **~35% of the way** to a "somewhat playable" campaign loop.
+
+What is already in place:
+- Deterministic simulation, replay, sync, and map boot/run paths are working.
+- Interactive map mode supports practical moment-to-moment unit control and command issuing.
+- Local-vision/fog rendering is wired for non-observer gameplay.
+
+What still blocks a minimally playable campaign experience:
+- Full StarEdit trigger/event coverage (mission logic completeness).
+- Briefing and mission flow frontend (enter mission, debrief, next mission progression).
+- Campaign save/load UX and persistence paths.
+- Remaining presentation parity gaps (sound/music/UI polish expected by campaign players).
+
+Practical interpretation:
+- **Today:** good for sandbox/skirmish-style map sessions and engine validation.
+- **Next milestone for "somewhat playable campaign":** trigger completeness + basic campaign flow shell (briefing -> mission -> success/fail -> next mission) + saves.
+
 ---
 
 ## What this is (and is not)
