@@ -231,6 +231,7 @@ struct main_t {
 		if (ui.quickload_pending) {
 			ui.quickload_pending = false;
 			if (quicksave_slot) {
+				bool resume_after_quickload = live_result_reported;
 				ui.st = copy_state(quicksave_slot->st);
 				ui.action_st = copy_state(quicksave_slot->action_st, quicksave_slot->st, ui.st);
 				ui.apm = quicksave_slot->apm;
@@ -238,6 +239,7 @@ struct main_t {
 				// Reset result latch so victory/defeat is re-detected and the
 				// game auto-pauses again if the player reaches it a second time.
 				live_result_reported = false;
+				if (resume_after_quickload) ui.is_paused = false;
 				log("quickload: restored to frame %d\n", ui.st.current_frame);
 			} else {
 				log("quickload: no save available\n");
