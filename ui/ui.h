@@ -566,6 +566,9 @@ struct ui_functions: ui_util_functions {
 	bool exit_on_close = true;
 	bool window_closed = false;
 
+	bool quicksave_pending = false;
+	bool quickload_pending = false;
+
 	xy screen_pos;
 
 	size_t screen_width;
@@ -3395,7 +3398,12 @@ struct ui_functions: ui_util_functions {
 						bool ctrl = wnd.get_key_state(224) || wnd.get_key_state(228);
 						bool shift = wnd.get_key_state(225) || wnd.get_key_state(229);
 
-						if (e.sym == 27) {
+						// F5 (scancode 62): quicksave; F8 (scancode 65): quickload.
+						if (e.scancode == 62) {
+							quicksave_pending = true;
+						} else if (e.scancode == 65) {
+							quickload_pending = true;
+						} else if (e.sym == 27) {
 							cancel_live_build_placement();
 							pending_order_mode = pending_order_mode_t::none;
 						} else if (e.sym == 'u') {

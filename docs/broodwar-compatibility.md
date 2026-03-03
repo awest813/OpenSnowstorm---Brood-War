@@ -78,6 +78,7 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | Debug overlay with F3 toggle | `ui/ui.h`, `ui/gfxtest.cpp` | Pressing F3 (or passing `--debug-overlay`) enables a top-left HUD showing current frame number, draw FPS, and game speed multiplier with a paused indicator; works in both replay and live-map modes. |
 | `--debug-overlay` CLI flag | `ui/gfxtest.cpp` | `gfxtest --debug-overlay` starts with the debug HUD visible, enabling diagnostic capture without interactive input. |
 | Desync action-history ring buffer | `sync_protocol.h`, `sync.h` | `desync_report` now carries a 16-entry ring buffer of the most-recently executed action IDs (frame, owner, action_id) snapshotted at mismatch time; `write_desync_reports` prints them oldest-first for triage; `sync_functions` overrides `on_action` to maintain the buffer in `sync_state`. |
+| Quicksave / quickload (F5 / F8) | `ui/ui.h`, `ui/gfxtest.cpp` | Single-player live map mode now supports an in-memory quicksave slot. F5 deep-copies `state`, `action_state`, and APM counters; F8 restores from the slot and resets the victory/defeat latch. The game auto-pauses on mission victory or defeat. |
 
 ## Campaign-readiness tracker (Phase 4 foundation)
 
@@ -85,7 +86,7 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 |---|---|---|---|---|
 | Trigger behavior parity (mission progression) | P0 | **Planned** | Trigger op coverage is not yet mapped to campaign-critical mission gates. | `./gfxtest --validate-replay --replay <campaign-trigger-fixture.rep>` must print `validate: PASS` and exit `0` once fixture is landed. |
 | Briefing entry/exit flow stability | P0 | **Planned** | No dedicated fixture yet for briefing-to-mission transition loop and cancel/continue handling. | `./gfxtest --verify-hashes <briefing-flow.hashes> --replay <briefing-flow.rep>` must print `verify-hashes: PASS` and exit `0` once fixture is landed. |
-| Save/load state restore invariants | P1 | **Planned** | Save-state schema/compatibility strategy is not documented with a replay-backed restore assertion. | `./gfxtest --verify-hashes <save-load-restore.hashes> --replay <save-load-restore.rep>` must print `verify-hashes: PASS` and exit `0` once fixture is landed. |
+| Save/load state restore invariants | P1 | **Partially validated** | In-memory quicksave (F5) and quickload (F8) are now wired in single-player live map mode; state deep-copies via existing `copy_state` infrastructure. Full file-backed save/load and a replay-backed restore fixture remain for the next slice. | `./gfxtest --verify-hashes <save-load-restore.hashes> --replay <save-load-restore.rep>` must print `verify-hashes: PASS` and exit `0` once fixture is landed. |
 
 ### Phase 4 kickoff owners / next slices
 

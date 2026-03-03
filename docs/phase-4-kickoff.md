@@ -83,6 +83,13 @@ verifiable set of user-visible milestones:
   action; the buffer is snapshotted into the `desync_report` at mismatch
   detection.  `write_desync_reports()` prints the history oldest-first for
   structured CI/log triage.
+- **Quicksave / quickload (F5 / F8)**: single-player live map mode now supports
+  an in-memory save slot. Pressing F5 deep-copies the current `state`,
+  `action_state`, and APM counters into `main_t::quicksave_slot` via the existing
+  `copy_state` infrastructure; F8 restores from that slot and resets the
+  victory/defeat latch so result detection fires correctly after a reload.
+  The game auto-pauses when victory or defeat is detected, giving the player a
+  moment to react before resuming or reloading.
 - Remaining immediate slice: generate and commit `maps/test.rep` + `maps/test.hashes`
   using `--gen-test-replay` to activate the CI `validate-replay` gate.
 
