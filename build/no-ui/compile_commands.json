@@ -1,8 +1,0 @@
-[
-{
-  "directory": "/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/no-ui/mini-openbwapi",
-  "command": "/usr/bin/c++ -DOPENBW_NO_SDL_IMAGE -DOPENBW_NO_SDL_MIXER -I/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/mini-openbwapi/.. -O3 -DNDEBUG -std=gnu++14 -o CMakeFiles/mini-openbwapi.dir/openbwapi.cpp.o -c /home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/mini-openbwapi/openbwapi.cpp",
-  "file": "/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/mini-openbwapi/openbwapi.cpp",
-  "output": "mini-openbwapi/CMakeFiles/mini-openbwapi.dir/openbwapi.cpp.o"
-}
-]

@@ -1,5 +1,0 @@
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/no-ui/CMakeFiles/edit_cache.dir
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/no-ui/CMakeFiles/rebuild_cache.dir
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/no-ui/mini-openbwapi/CMakeFiles/mini-openbwapi.dir
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/no-ui/mini-openbwapi/CMakeFiles/edit_cache.dir
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/no-ui/mini-openbwapi/CMakeFiles/rebuild_cache.dir

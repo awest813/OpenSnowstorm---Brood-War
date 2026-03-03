@@ -1,2 +1,0 @@
-/usr/bin/ar qc libopenbw_ui.a CMakeFiles/openbw_ui.dir/ui/sdl2.cpp.o
-/usr/bin/ranlib libopenbw_ui.a

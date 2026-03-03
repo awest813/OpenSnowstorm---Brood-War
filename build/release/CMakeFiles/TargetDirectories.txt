@@ -1,7 +1,0 @@
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/release/CMakeFiles/openbw_ui.dir
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/release/CMakeFiles/gfxtest.dir
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/release/CMakeFiles/edit_cache.dir
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/release/CMakeFiles/rebuild_cache.dir
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/release/mini-openbwapi/CMakeFiles/mini-openbwapi.dir
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/release/mini-openbwapi/CMakeFiles/edit_cache.dir
-/home/runner/work/OpenSnowstorm---Brood-War/OpenSnowstorm---Brood-War/build/release/mini-openbwapi/CMakeFiles/rebuild_cache.dir
