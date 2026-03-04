@@ -12834,7 +12834,7 @@ struct state_functions {
 		}
 
 		// Decrement the global countdown timer once per ~24 frames (~1 game second).
-		if (st.current_frame > 0 && st.current_frame % 24 == 0) {
+		if (st.current_frame % 24 == 0) {
 			if (st.countdown_timer > 0) --st.countdown_timer;
 		}
 
@@ -18949,7 +18949,11 @@ struct state_functions {
 				st.shared_vision[7] |= 1 << owner;
 				break;
 			default:
-				(void)0; // unknown AI script tag - no-op
+				// Unknown AI script tags are silently ignored.  Campaign maps that
+				// use AI script action 15 with non-shared-vision tags (e.g. custom
+				// AI script IDs compiled into specific campaigns) are not yet
+				// supported; throwing here would prevent those maps from loading.
+				break;
 			}
 			return true;
 		case 16: // set alliance status
@@ -19292,7 +19296,12 @@ struct state_functions {
 		case 61: case 62: case 63: case 64: // leaderboard goal actions - UI layer, no-op
 			return true;
 		default:
-			(void)0; // unknown action type - no-op
+			// Unknown trigger action types are silently skipped.  Campaign maps may
+			// contain action types not yet implemented (e.g. briefing, leaderboard
+			// variants, or custom extension types).  Returning true lets the trigger
+			// continue to its next action rather than hard-stopping.
+			// TODO: add a debug-build counter/log once a lightweight logging hook
+			// is available in state_functions.
 			return true;
 		}
 	}
