@@ -80,11 +80,26 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | Desync action-history ring buffer | `sync_protocol.h`, `sync.h` | `desync_report` now carries a 16-entry ring buffer of the most-recently executed action IDs (frame, owner, action_id) snapshotted at mismatch time; `write_desync_reports` prints them oldest-first for triage; `sync_functions` overrides `on_action` to maintain the buffer in `sync_state`. |
 | Quicksave / quickload (F5 / F8) | `ui/ui.h`, `ui/gfxtest.cpp` | Single-player live map mode now supports an in-memory quicksave slot. F5 deep-copies `state`, `action_state`, and APM counters; F8 restores from the slot and resets the victory/defeat latch. The game auto-pauses on mission victory or defeat. |
 
+### Changes landed (Phase 4 continuation – trigger expansion)
+
+| Change | Files | What it enables |
+|---|---|---|
+| `switches[256]` state field | `bwgame_state.h` | 256-element global switch array; trigger actions Set Switch (40) and condition Switch (11) now operate on persistent simulation state. |
+| `countdown_timer` state field | `bwgame_state.h` | Global countdown timer in game seconds; decremented ~once per second in `process_triggers`; enables timer-based trigger conditions and Set Countdown Timer actions. |
+| `unit_deaths[12][228]` state field | `bwgame_state.h` | Per-player per-unit-type death counters; incremented in `destroy_unit_impl`; enables Deaths (15) and Kill (5) trigger conditions. |
+| Death tracking in `destroy_unit_impl` | `bwgame.h` | Increments `st.unit_deaths[owner][uid]` when a non-turret, non-refinery unit is fully destroyed; feeds the Deaths/Kill conditions. |
+| New trigger conditions (1,4,5,11,13,15,21,23) | `bwgame.h` | Countdown Timer, Accumulate resources, Kill/Deaths, Switch state, Never, Score conditions; unknown types now return false gracefully. |
+| New trigger actions (5–13,16,17,21,23,27–33,36,40,47–52,55–59,61–64) | `bwgame.h` | Pause/Unpause Game, Transmission, Play Sound, Display Text Message, Center View, Create Unit with Properties, Set Mission Objectives, Move Unit to Location, Set Alliance Status, Set Score, Set Countdown Timer, Kill Unit at Location, Leaderboard no-ops, Draw, Give Units to Player, Set Switch, Modify Unit HP/Energy/Shields, Set Next Scenario; unknown types silently skipped. |
+| Set Resources subtract bug fix | `bwgame.h` | Trigger action 26 subtract path was unreachable (`num_n==8` matched add first); corrected to `num_n==9`. |
+| `trigger_unit_matches_filter()` helper | `bwgame.h` | Extracted shared unit-type predicate from duplicated inline code in kill/remove/order/give actions; reduces future maintenance surface. |
+| `get_map_string()` in `state_functions` | `bwgame.h` | Mission text accessible from all trigger action handlers without going through `game_load_functions`. |
+| Trigger event virtual callbacks | `bwgame.h` | `on_trigger_display_text`, `on_trigger_transmission`, `on_trigger_center_view`, `on_trigger_set_objectives`, `on_trigger_set_next_scenario` hooks in `state_functions`; UI layer can override to surface mission text and camera cues. |
+
 ## Campaign-readiness tracker (Phase 4 foundation)
 
 | Area | Priority | Status | Current blocker | Deterministic check |
 |---|---|---|---|---|
-| Trigger behavior parity (mission progression) | P0 | **Planned** | Trigger op coverage is not yet mapped to campaign-critical mission gates. | `./gfxtest --validate-replay --replay <campaign-trigger-fixture.rep>` must print `validate: PASS` and exit `0` once fixture is landed. |
+| Trigger behavior parity (mission progression) | P0 | **In progress** | Core trigger ops now covered; remaining gaps are leaderboard/score displays, briefing-specific conditions, and campaign transition. | `./gfxtest --validate-replay --replay <campaign-trigger-fixture.rep>` must print `validate: PASS` and exit `0` once fixture is landed. |
 | Briefing entry/exit flow stability | P0 | **Planned** | No dedicated fixture yet for briefing-to-mission transition loop and cancel/continue handling. | `./gfxtest --verify-hashes <briefing-flow.hashes> --replay <briefing-flow.rep>` must print `verify-hashes: PASS` and exit `0` once fixture is landed. |
 | Save/load state restore invariants | P1 | **Partially validated** | In-memory quicksave (F5) and quickload (F8) are now wired in single-player live map mode; state deep-copies via existing `copy_state` infrastructure. Full file-backed save/load and a replay-backed restore fixture remain for the next slice. | `./gfxtest --verify-hashes <save-load-restore.hashes> --replay <save-load-restore.rep>` must print `verify-hashes: PASS` and exit `0` once fixture is landed. |
 

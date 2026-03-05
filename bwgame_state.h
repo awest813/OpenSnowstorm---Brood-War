@@ -246,6 +246,18 @@ struct state_base_copyable {
 	bool cheat_operation_cwal;
 
 	a_vector<location> locations;
+
+	// StarEdit switch flags (256 switches used by trigger conditions/actions).
+	std::array<bool, 256> switches{};
+
+	// Global countdown timer in game seconds; decremented ~once per second by
+	// process_triggers.  Trigger condition 1 and action 21 operate on this.
+	int countdown_timer = 0;
+
+	// Per-player, per-unit-type death counters.  Incremented in
+	// destroy_unit_impl when a unit is destroyed; used by trigger condition 15
+	// (Deaths) and condition 5 (Kill — mapped to deaths for simplicity).
+	std::array<std::array<int, 228>, 12> unit_deaths{};
 };
 
 // Intrusive-list link functor for Pylon psionic-matrix membership.

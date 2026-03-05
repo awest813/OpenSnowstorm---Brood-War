@@ -92,6 +92,41 @@ verifiable set of user-visible milestones:
   moment to react before resuming or reloading.
 - Remaining immediate slice: generate and commit `maps/test.rep` + `maps/test.hashes`
   using `--gen-test-replay` to activate the CI `validate-replay` gate.
+- **Trigger system expansion (Phase 4 continuation)**: Substantially expanded the
+  StarEdit trigger engine in `bwgame.h`:
+  - **New state fields** (`bwgame_state.h`): `switches[256]` (global trigger switch
+    flags), `countdown_timer` (global countdown in game seconds), and
+    `unit_deaths[12][228]` (per-player per-unit-type death counters).
+  - **Countdown timer decrement**: `process_triggers` now decrements
+    `st.countdown_timer` once per ~24 frames (~1 game second), matching BW's
+    gameplay timer.
+  - **Death tracking**: `destroy_unit_impl` now increments `st.unit_deaths[owner][uid]`
+    whenever a unit is fully destroyed, enabling the Deaths/Kill trigger conditions.
+  - **New trigger conditions**: Countdown Timer (1), Accumulate resources (4),
+    Kill (5, mapped to deaths), Switch state (11), Mission brief no-op (13),
+    Deaths (15), Score (21), Never (23).  Unknown condition types now return false
+    gracefully instead of throwing.
+  - **New trigger actions**: Pause Game (5), Unpause Game (6), Transmission (7),
+    Play Sound (8), Display Text Message (9, fires `on_trigger_display_text`),
+    Center View (10, fires `on_trigger_center_view`), Create Unit with Properties (11),
+    Set Mission Objectives (12, fires `on_trigger_set_objectives`), Move Unit to
+    Location (13), Set Alliance Status (16), Set Score (17), Set Countdown Timer
+    (21 and alternate 59), Kill Unit at Location (23), Leaderboard no-ops (27–31,
+    61–64), Draw (32), Give Units to Player (36), Set Switch (40, supports set/clear/
+    toggle/randomize), Modify Unit HP (48), Modify Unit Energy (49), Modify Unit
+    Shield Points (50), Modify Unit Resource Amount (51), Minimap Ping (55),
+    Set Next Scenario (58, fires `on_trigger_set_next_scenario`).  Unknown action
+    types are silently skipped (no-op) instead of crashing.
+  - **Bug fix**: trigger action 26 (Set Resources) subtract path previously used
+    `num_n == 8` (same as add, unreachable); corrected to `num_n == 9`.
+  - **Helper refactor**: extracted `trigger_unit_matches_filter()` from duplicated
+    inline logic in kill/remove/order/give actions.  `get_map_string()` is now
+    available in `state_functions` so trigger actions can access mission text
+    without going through `game_load_functions`.
+  - **Trigger event callbacks**: added `on_trigger_display_text`,
+    `on_trigger_transmission`, `on_trigger_center_view`, `on_trigger_set_objectives`,
+    `on_trigger_set_next_scenario` virtual hooks to `state_functions`; the UI layer
+    can override these to surface mission text and camera cues.
 
 ---
 

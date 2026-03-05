@@ -40,6 +40,14 @@ struct state_functions {
 	virtual void on_player_eliminated(int owner) {}
 	virtual void on_victory_state(int owner, int state) {}
 
+	// Trigger event callbacks for UI-visible notifications.
+	// The default implementations are no-ops; override in the UI layer.
+	virtual void on_trigger_display_text(int owner, const a_string& text) {}
+	virtual void on_trigger_transmission(int owner, int string_index) {}
+	virtual void on_trigger_center_view(int owner, int location_id) {}
+	virtual void on_trigger_set_objectives(int owner, const a_string& text) {}
+	virtual void on_trigger_set_next_scenario(int owner, const a_string& scenario) {}
+
 	virtual ~state_functions() {}
 
 	state& st;
@@ -59,6 +67,17 @@ struct state_functions {
 	const order_type_t* get_order_type(Orders id) const {
 		if ((size_t)id >= 189) error("invalid order id %d", (size_t)id);
 		return &global_st.order_types.vec[(size_t)id];
+	}
+
+	// Returns the map string at the given 1-based index, or an empty string for
+	// invalid indices.  Available to all state_functions subclasses so that
+	// trigger actions can access mission text without going through
+	// game_load_functions.
+	a_string get_map_string(size_t index) const {
+		if (index == 0) return {};
+		--index;
+		if (index >= game_st.map_strings.size()) return {};
+		return game_st.map_strings[index];
 	}
 
 	template<typename T>
@@ -12814,6 +12833,11 @@ struct state_functions {
 			}
 		}
 
+		// Decrement the global countdown timer once per ~24 frames (~1 game second).
+		if (st.current_frame % 24 == 0) {
+			if (st.countdown_timer > 0) --st.countdown_timer;
+		}
+
 		if (st.trigger_timer) {
 			--st.trigger_timer;
 			return;
@@ -15903,6 +15927,10 @@ struct state_functions {
 				on_unit_destroy(u);
 				increment_unit_counts(u, -1);
 				if (u_completed(u)) add_completed_unit(u, -1, false);
+				// Track death for trigger Deaths/Kill conditions.
+				if (u->owner >= 0 && u->owner < 12 && (size_t)u->unit_type->id < 228) {
+					++st.unit_deaths[(size_t)u->owner][(size_t)u->unit_type->id];
+				}
 				st.player_units[u->owner].remove(*u);
 				if (unit_is_map_revealer(u)) st.map_revealer_units.remove(*u);
 				else if (us_hidden(u)) st.hidden_units.remove(*u);
@@ -18581,19 +18609,87 @@ struct state_functions {
 
 	bool test_trigger_condition(const trigger::condition& c, int owner) const {
 		switch (c.type) {
+		case 1: // countdown timer
+			return trigger_count_comparison(c, st.countdown_timer);
 		case 2: // command
 			return trigger_count_comparison(c, trigger_command_count(st, owner, c.group, c.unit_id, c.num_n != 1));
 		case 3: // bring
 			return trigger_count_comparison(c, trigger_command_count(trigger_bring_count(st.locations.at(c.location - 1)), owner, c.group, c.unit_id, c.num_n != 1));
+		case 4: // accumulate resources
+			{
+				int total = 0;
+				for (int p : trigger_players(owner, c.group)) {
+					if (p < 0 || p >= 8) continue;
+					if (c.extra_n == 0) total += st.current_minerals[p];
+					else total += st.current_gas[p];
+				}
+				return trigger_count_comparison(c, total);
+			}
+		case 5: // kill (units of type destroyed by this player; approximated as deaths)
+			{
+				int total = 0;
+				for (int p : trigger_players(owner, c.group)) {
+					if (p < 0 || p >= 12) continue;
+					int uid = c.unit_id;
+					if (uid >= 0 && uid < 228) {
+						total += st.unit_deaths[(size_t)p][(size_t)uid];
+					} else if (uid == 229) { // any unit
+						for (size_t i = 0; i < 228; ++i) total += st.unit_deaths[(size_t)p][i];
+					}
+				}
+				return trigger_count_comparison(c, total);
+			}
+		case 11: // switch state
+			{
+				int sw = c.extra_n;
+				if (sw < 0 || sw >= 256) return false;
+				bool is_set = st.switches[(size_t)sw];
+				// c.num_n: 2 = set, 3 = cleared
+				if (c.num_n == 2) return is_set;
+				if (c.num_n == 3) return !is_set;
+				return false;
+			}
 		case 12: // elapsed time
 			return trigger_count_comparison(c, st.current_frame);
+		case 13: // mission brief – condition never true outside briefing
+			return false;
 		case 14: // opponents
 			return trigger_count_comparison(c, trigger_opponent_count(owner, c.group));
+		case 15: // deaths (units of this type owned by player group have died)
+			{
+				int total = 0;
+				for (int p : trigger_players(owner, c.group)) {
+					if (p < 0 || p >= 12) continue;
+					int uid = c.unit_id;
+					if (uid >= 0 && uid < 228) {
+						total += st.unit_deaths[(size_t)p][(size_t)uid];
+					} else if (uid == 229) { // any unit
+						for (size_t i = 0; i < 228; ++i) total += st.unit_deaths[(size_t)p][i];
+					}
+				}
+				return trigger_count_comparison(c, total);
+			}
+		case 21: // score
+			{
+				// c.extra_n: 0=total kills, 1=units, 2=buildings, 3=units+buildings,
+				//            4=kills, 5=razings, 6=kills+razings, 7=custom
+				int total = 0;
+				for (int p : trigger_players(owner, c.group)) {
+					if (p < 0 || p >= 12) continue;
+					switch (c.extra_n) {
+					case 0: case 1: case 3: total += st.unit_score[p]; break;
+					case 2:                 total += st.building_score[p]; break;
+					default: break;
+					}
+				}
+				return trigger_count_comparison(c, total);
+			}
 		case 22: // always
 			return true;
-		default:
-			error("unknown trigger condition %d\n", c.type);
+		case 23: // never
 			return false;
+		default:
+			return false; // unknown condition type - treated as never-true
 		}
 	}
 
@@ -18733,6 +18829,14 @@ struct state_functions {
 		std::array<int, 12> victory_state{};
 	};
 
+	bool trigger_unit_matches_filter(const unit_t* u, int uid) const {
+		if (uid == 229) return true;
+		if (uid == 230) return (u->unit_type->group_flags & GroupFlags::Men) != 0;
+		if (uid == 231) return (u->unit_type->group_flags & GroupFlags::Building) != 0;
+		if (uid == 232) return (u->unit_type->group_flags & GroupFlags::Factory) != 0;
+		return (int)u->unit_type->id == uid;
+	}
+
 	bool execute_trigger_action(execute_trigger_struct& ets, int owner, running_trigger& rt, running_trigger::action& ra, const trigger::action& a) {
 		switch (a.type) {
 		case 1: // victory
@@ -18759,6 +18863,65 @@ struct state_functions {
 			st.trigger_wait_timers[owner] = a.time_n;
 			ra.flags |= 1;
 			return false;
+		case 5: // pause game - simulation-level no-op (UI handles actual pausing)
+			return true;
+		case 6: // unpause game - simulation-level no-op
+			return true;
+		case 7: // transmission (voice + text + center view)
+			on_trigger_transmission(owner, a.string_index);
+			return true;
+		case 8: // play WAV
+			return true;
+		case 9: // display text message
+			if (a.string_index > 0) {
+				a_string msg = get_map_string((size_t)a.string_index);
+				on_trigger_display_text(owner, msg);
+			}
+			return true;
+		case 10: // center view - handled at UI layer; simulation logs the location
+			on_trigger_center_view(owner, a.location);
+			return true;
+		case 11: // create unit with properties - treat same as action 44
+			for (int p : trigger_players(owner, a.group_n)) {
+				if (a.extra_n < 0 || a.extra_n >= 228) continue;
+				const unit_type_t* ut = get_unit_type((UnitTypes)a.extra_n);
+				if (unit_is_mineral_field(ut) || unit_is(ut, UnitTypes::Resource_Vespene_Geyser)) p = 11;
+				auto& loc = st.locations.at((size_t)a.location - 1);
+				xy pos = (loc.area.from + loc.area.to) / 2;
+				for (int i = 0; i != a.num_n; ++i) {
+					trigger_create_unit(ut, pos, p);
+				}
+			}
+			return true;
+		case 12: // set mission objectives
+			if (a.string_index > 0) {
+				a_string obj = get_map_string((size_t)a.string_index);
+				on_trigger_set_objectives(owner, obj);
+			}
+			return true;
+		case 13: // move unit to location
+			{
+				const location& src_loc = st.locations.at((size_t)a.location - 1);
+				const location& dst_loc = st.locations.at((size_t)a.group2_n - 1);
+				xy dst_pos = (dst_loc.area.from + dst_loc.area.to) / 2;
+				int moved = 0;
+				int limit = a.num_n == 0 ? std::numeric_limits<int>::max() : a.num_n;
+				a_vector<unit_t*> to_move;
+				for (unit_t* u : find_units(src_loc.area)) {
+					if (moved >= limit) break;
+					if (!unit_is_at_elevation_flags(u, src_loc.elevation_flags)) continue;
+					if (!trigger_players_pred(owner, a.group_n, u->owner)) continue;
+					if (!trigger_unit_matches_filter(u, a.extra_n)) continue;
+					if (ut_turret(u)) continue;
+					if (unit_dying(u)) continue;
+					to_move.push_back(u);
+					++moved;
+				}
+				for (unit_t* u : to_move) {
+					move_unit(u, dst_pos);
+				}
+			}
+			return true;
 		case 15: // ai script
 			switch (a.group2_n) {
 			case 0x3069562b:
@@ -18786,8 +18949,42 @@ struct state_functions {
 				st.shared_vision[7] |= 1 << owner;
 				break;
 			default:
-				error("unknown ai script");
+				// Unknown AI script tags are silently ignored.  Campaign maps that
+				// use AI script action 15 with non-shared-vision tags (e.g. custom
+				// AI script IDs compiled into specific campaigns) are not yet
+				// supported; throwing here would prevent those maps from loading.
+				break;
 			}
+			return true;
+		case 16: // set alliance status
+			// a.group_n = player whose alliance view changes, a.group2_n = target, a.extra_n = type
+			for (int p : trigger_players(owner, a.group_n)) {
+				if (p < 0 || p >= 12) continue;
+				for (int q : trigger_players(owner, a.group2_n)) {
+					if (q < 0 || q >= 12 || q == p) continue;
+					// a.extra_n: 0 = enemy, 1 = ally, 2 = allied victory
+					if (a.extra_n == 0) st.alliances[p][q] = 0;
+					else st.alliances[p][q] = 2;
+				}
+			}
+			return true;
+		case 17: // set score
+			for (int p : trigger_players(owner, a.group_n)) {
+				if (p < 0 || p >= 12) continue;
+				int val = a.group2_n;
+				int* score = nullptr;
+				if (a.extra_n == 0 || a.extra_n == 1 || a.extra_n == 3) score = &st.unit_score[p];
+				else if (a.extra_n == 2)                                  score = &st.building_score[p];
+				if (!score) continue;
+				if (a.num_n == 7) *score = val;
+				else if (a.num_n == 8) *score += val;
+				else if (a.num_n == 9) { *score -= val; if (*score < 0) *score = 0; }
+			}
+			return true;
+		case 21: // set countdown timer
+			if (a.num_n == 7) st.countdown_timer = a.time_n;
+			else if (a.num_n == 8) st.countdown_timer += a.time_n;
+			else if (a.num_n == 9) { st.countdown_timer -= a.time_n; if (st.countdown_timer < 0) st.countdown_timer = 0; }
 			return true;
 		case 22: // kill unit
 			for (int p : trigger_players(owner, a.group_n)) {
@@ -18796,19 +18993,27 @@ struct state_functions {
 					unit_t* u = &*i++;
 					if (ut_turret(u)) continue;
 					if (unit_dying(u)) continue;
-					if (ut_powerup(u)) error("trigger kill unit fixme: powerup");
+					if (ut_powerup(u)) continue;
 					if (u->owner != p) continue;
-					if (uid == 229) kill_unit(u);
-					else if (uid == 230) {
-						if (u->unit_type->group_flags & GroupFlags::Men) kill_unit(u);
-					} else if (uid == 231) {
-						if (u->unit_type->group_flags & GroupFlags::Building) kill_unit(u);
-					} else if (uid == 232) {
-						if (u->unit_type->group_flags & GroupFlags::Factory) kill_unit(u);
-					} else {
-						if (unit_is(u, (UnitTypes)uid)) kill_unit(u);
-					}
+					if (trigger_unit_matches_filter(u, uid)) kill_unit(u);
 				}
+			}
+			return true;
+		case 23: // kill unit at location
+			for (int p : trigger_players(owner, a.group_n)) {
+				int uid = a.extra_n;
+				const location& loc = st.locations.at((size_t)a.location - 1);
+				a_vector<unit_t*> to_kill;
+				for (unit_t* u : find_units(loc.area)) {
+					if (!unit_is_at_elevation_flags(u, loc.elevation_flags)) continue;
+					if (ut_turret(u)) continue;
+					if (unit_dying(u)) continue;
+					if (ut_powerup(u)) continue;
+					if (u->owner != p) continue;
+					if (!trigger_unit_matches_filter(u, uid)) continue;
+					to_kill.push_back(u);
+				}
+				for (unit_t* u : to_kill) kill_unit(u);
 			}
 			return true;
 		case 24: // remove unit
@@ -18818,28 +19023,16 @@ struct state_functions {
 					unit_t* u = &*i++;
 					if (ut_turret(u)) continue;
 					if (unit_dying(u)) continue;
-					if (ut_powerup(u)) error("trigger kill unit fixme: powerup");
+					if (ut_powerup(u)) continue;
 					if (u->owner != p) continue;
-					bool ok = false;
-					if (uid == 229) ok = true;
-					else if (uid == 230) {
-						if (u->unit_type->group_flags & GroupFlags::Men) ok = true;
-					} else if (uid == 231) {
-						if (u->unit_type->group_flags & GroupFlags::Building) ok = true;
-					} else if (uid == 232) {
-						if (u->unit_type->group_flags & GroupFlags::Factory) ok = true;
-					} else {
-						if (unit_is(u, (UnitTypes)uid)) ok = true;
-					}
-					if (!ok) continue;
+					if (!trigger_unit_matches_filter(u, uid)) continue;
 					hide_unit(u);
 					kill_unit(u);
 				}
 			}
 			return true;
 		case 25: // remove unit at location
-			//for (int p : trigger_players(owner, a.group_n)) {
-			if (true) {
+			{
 				int uid = a.extra_n;
 				std::function<void(unit_t*)> proc = [&](unit_t* u) {
 					if (!unit_is_at_elevation_flags(u, st.locations[a.location - 1].elevation_flags)) return;
@@ -18855,23 +19048,11 @@ struct state_functions {
 
 					if (ut_turret(u)) return;
 					if (unit_dying(u)) return;
-					if (ut_powerup(u)) error("trigger remove unit fixme: powerup");
+					if (ut_powerup(u)) return;
 					if (!trigger_players_pred(owner, a.group_n, u->owner)) return;
-					bool ok = false;
-					if (uid == 229) ok = true;
-					else if (uid == 230) {
-						if (u->unit_type->group_flags & GroupFlags::Men) ok = true;
-					} else if (uid == 231) {
-						if (u->unit_type->group_flags & GroupFlags::Building) ok = true;
-					} else if (uid == 232) {
-						if (u->unit_type->group_flags & GroupFlags::Factory) ok = true;
-					} else {
-						if (unit_is(u, (UnitTypes)uid)) ok = true;
-					}
-					if (!ok) return;
+					if (!trigger_unit_matches_filter(u, uid)) return;
 					hide_unit(u);
 					kill_unit(u);
-
 				};
 				for (unit_t* u : find_units(st.locations.at(a.location - 1).area)) {
 					proc(u);
@@ -18881,7 +19062,7 @@ struct state_functions {
 		case 26: // set resources
 			for (int p : trigger_players(owner, a.group_n)) {
 				if (p >= 8) continue;
-				if (a.num_n == 7) {
+				if (a.num_n == 7) {         // set
 					if (a.extra_n == 0 || a.extra_n == 2) {
 						st.current_minerals[p] = a.group2_n;
 						st.total_minerals_gathered[p] = a.group2_n;
@@ -18890,7 +19071,7 @@ struct state_functions {
 						st.current_gas[p] = a.group2_n;
 						st.total_gas_gathered[p] = a.group2_n;
 					}
-				} else if (a.num_n == 8) {
+				} else if (a.num_n == 8) {  // add
 					if (a.extra_n == 0 || a.extra_n == 2) {
 						st.current_minerals[p] += a.group2_n;
 						st.total_minerals_gathered[p] += a.group2_n;
@@ -18899,7 +19080,7 @@ struct state_functions {
 						st.current_gas[p] += a.group2_n;
 						st.total_gas_gathered[p] += a.group2_n;
 					}
-				} else if (a.num_n == 8) {
+				} else if (a.num_n == 9) {  // subtract (was incorrectly num_n==8 in old code)
 					if (a.extra_n == 0 || a.extra_n == 2) {
 						if (st.current_minerals[p] < a.group2_n) st.current_minerals[p] = 0;
 						else st.current_minerals[p] -= a.group2_n;
@@ -18911,8 +19092,47 @@ struct state_functions {
 				}
 			}
 			return true;
+		case 27: case 28: case 29: case 30: case 31: // leaderboard actions - UI layer, no-op
+			return true;
+		case 32: // draw - all players draw
+			for (int p : active_players()) {
+				ets.victory_state[p] = 5;
+			}
+			return true;
+		case 33: // set alliance status (alternate form - same handling as 16)
+			for (int p : trigger_players(owner, a.group_n)) {
+				if (p < 0 || p >= 12) continue;
+				for (int q : trigger_players(owner, a.group2_n)) {
+					if (q < 0 || q >= 12 || q == p) continue;
+					if (a.extra_n == 0) st.alliances[p][q] = 0;
+					else st.alliances[p][q] = 2;
+				}
+			}
+			return true;
+		case 36: // give units to player
+			{
+				int dst = a.group2_n;
+				if (dst < 0 || dst >= 12) return true;
+				int uid = a.extra_n;
+				int limit = a.num_n == 0 ? std::numeric_limits<int>::max() : a.num_n;
+				const location& loc = st.locations.at((size_t)a.location - 1);
+				a_vector<unit_t*> to_give;
+				for (unit_t* u : find_units(loc.area)) {
+					if ((int)to_give.size() >= limit) break;
+					if (!unit_is_at_elevation_flags(u, loc.elevation_flags)) continue;
+					if (!trigger_players_pred(owner, a.group_n, u->owner)) continue;
+					if (!trigger_unit_matches_filter(u, uid)) continue;
+					if (ut_turret(u)) continue;
+					if (unit_dying(u)) continue;
+					to_give.push_back(u);
+				}
+				for (unit_t* u : to_give) {
+					trigger_give_unit_to(u, dst);
+				}
+			}
+			return true;
 		case 38: // move location
-			if (true) {
+			{
 				auto& loc = st.locations.at(a.location - 1);
 				xy pos = (loc.area.from + loc.area.to) / 2;
 				unit_t* u = trigger_find_unit(owner, loc, a.group_n, a.extra_n);
@@ -18941,8 +19161,18 @@ struct state_functions {
 				target_loc.area.to = to;
 			}
 			return true;
+		case 40: // set switch
+			// a.extra_n = switch number (0-based), a.num_n: 4=set, 5=clear, 6=toggle, 11=randomize
+			if (a.extra_n >= 0 && a.extra_n < 256) {
+				if (a.num_n == 4)       st.switches[(size_t)a.extra_n] = true;
+				else if (a.num_n == 5)  st.switches[(size_t)a.extra_n] = false;
+				else if (a.num_n == 6)  st.switches[(size_t)a.extra_n] = !st.switches[(size_t)a.extra_n];
+				else if (a.num_n == 11) st.switches[(size_t)a.extra_n] = (lcg_rand(78) & 1) != 0;
+			}
+			return true;
 		case 44: // create unit
 			for (int p : trigger_players(owner, a.group_n)) {
+				if (a.extra_n < 0 || a.extra_n >= 228) continue;
 				const unit_type_t* ut = get_unit_type((UnitTypes)a.extra_n);
 				if (unit_is_mineral_field(ut) || unit_is(ut, UnitTypes::Resource_Vespene_Geyser)) p = 11;
 				auto& loc = st.locations.at(a.location - 1);
@@ -18963,13 +19193,7 @@ struct state_functions {
 				if (unit_is(u, UnitTypes::Terran_Nuclear_Missile)) continue;
 				if (unit_is_fighter(u)) continue;
 				if (unit_is_rescuable(u)) continue;
-				bool ok = false;
-				if (a.extra_n == 229) ok = true;
-				else if (a.extra_n == 230) ok = (u->unit_type->group_flags & GroupFlags::Men) != 0;
-				else if (a.extra_n == 231) ok = (u->unit_type->group_flags & GroupFlags::Building) != 0;
-				else if (a.extra_n == 232) ok = (u->unit_type->group_flags & GroupFlags::Factory) != 0;
-				else ok = (int)u->unit_type->id == a.extra_n;
-				if (!ok) continue;
+				if (!trigger_unit_matches_filter(u, a.extra_n)) continue;
 				Orders o = Orders::Nothing;
 				if (a.num_n == 0) o = Orders::Move;
 				else if (a.num_n == 1) o = Orders::Patrol;
@@ -18986,6 +19210,63 @@ struct state_functions {
 				}
 			}
 			return true;
+		case 47: // play WAV (alternate form) - no-op
+			return true;
+		case 48: // modify unit hit points
+			{
+				int uid = a.extra_n;
+				int pct = a.group2_n; // percentage 0-100
+				const location& loc = st.locations.at((size_t)a.location - 1);
+				for (unit_t* u : find_units(loc.area)) {
+					if (!unit_is_at_elevation_flags(u, loc.elevation_flags)) continue;
+					if (!trigger_players_pred(owner, a.group_n, u->owner)) continue;
+					if (!trigger_unit_matches_filter(u, uid)) continue;
+					if (unit_dying(u)) continue;
+					fp8 new_hp = u->unit_type->hitpoints * pct / 100;
+					if (new_hp < 1_fp8) new_hp = 1_fp8;
+					set_unit_hp(u, new_hp);
+				}
+			}
+			return true;
+		case 49: // modify unit energy
+			{
+				int uid = a.extra_n;
+				int pct = a.group2_n;
+				const location& loc = st.locations.at((size_t)a.location - 1);
+				for (unit_t* u : find_units(loc.area)) {
+					if (!unit_is_at_elevation_flags(u, loc.elevation_flags)) continue;
+					if (!trigger_players_pred(owner, a.group_n, u->owner)) continue;
+					if (!trigger_unit_matches_filter(u, uid)) continue;
+					if (unit_dying(u)) continue;
+					fp8 max_e = unit_max_energy(u);
+					set_unit_energy(u, max_e * pct / 100);
+				}
+			}
+			return true;
+		case 50: // modify unit shield points
+			{
+				int uid = a.extra_n;
+				int pct = a.group2_n;
+				const location& loc = st.locations.at((size_t)a.location - 1);
+				for (unit_t* u : find_units(loc.area)) {
+					if (!unit_is_at_elevation_flags(u, loc.elevation_flags)) continue;
+					if (!trigger_players_pred(owner, a.group_n, u->owner)) continue;
+					if (!trigger_unit_matches_filter(u, uid)) continue;
+					if (unit_dying(u)) continue;
+					if (!u->unit_type->has_shield) continue;
+					fp8 new_sp = fp8::integer(u->unit_type->shield_points) * pct / 100;
+					set_unit_shield_points(u, new_sp);
+				}
+			}
+			return true;
+		case 51: // modify unit resource amount
+			for (unit_t* u : find_units(st.locations.at(a.location - 1).area)) {
+				if (!trigger_players_pred(owner, a.group_n, u->owner)) continue;
+				if (!unit_is_at_elevation_flags(u, st.locations[a.location - 1].elevation_flags)) continue;
+				if (!trigger_unit_matches_filter(u, a.extra_n)) continue;
+				set_unit_resources(u, a.group2_n);
+			}
+			return true;
 		case 52: // set unit resources
 			for (unit_t* u : find_units(st.locations.at(a.location - 1).area)) {
 				if (!trigger_players_pred(owner, a.group_n, u->owner)) continue;
@@ -18993,12 +19274,37 @@ struct state_functions {
 				set_unit_resources(u, a.group2_n);
 			}
 			return true;
+		case 53: // modify unit hangar count - no-op
+			return true;
+		case 55: // minimap ping - UI layer, no-op
+			return true;
+		case 56: // talking portrait - UI layer, no-op
+			return true;
+		case 57: // mute unit speech - UI layer, no-op
+			return true;
+		case 58: // set next scenario
+			if (a.string_index > 0) {
+				a_string scenario = get_map_string((size_t)a.string_index);
+				on_trigger_set_next_scenario(owner, scenario);
+			}
+			return true;
+		case 59: // set countdown timer (alternate form - same as 21)
+			if (a.num_n == 7) st.countdown_timer = a.time_n;
+			else if (a.num_n == 8) st.countdown_timer += a.time_n;
+			else if (a.num_n == 9) { st.countdown_timer -= a.time_n; if (st.countdown_timer < 0) st.countdown_timer = 0; }
+			return true;
+		case 61: case 62: case 63: case 64: // leaderboard goal actions - UI layer, no-op
+			return true;
 		default:
-			error("unknown trigger action %d", a.type);
-			return false;
+			// Unknown trigger action types are silently skipped.  Campaign maps may
+			// contain action types not yet implemented (e.g. briefing, leaderboard
+			// variants, or custom extension types).  Returning true lets the trigger
+			// continue to its next action rather than hard-stopping.
+			// TODO: add a debug-build counter/log once a lightweight logging hook
+			// is available in state_functions.
+			return true;
 		}
 	}
-
 	void execute_trigger(execute_trigger_struct& ets, int owner, running_trigger& rt, const trigger& t) {
 		rt.flags |= 1;
 		size_t index = rt.current_action_index;
