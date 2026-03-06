@@ -47,6 +47,10 @@ struct state_functions {
 	virtual void on_trigger_center_view(int owner, int location_id) {}
 	virtual void on_trigger_set_objectives(int owner, const a_string& text) {}
 	virtual void on_trigger_set_next_scenario(int owner, const a_string& scenario) {}
+	// Trigger pause/unpause game actions (5/6): the UI layer should override
+	// these to actually pause/resume simulation playback.
+	virtual void on_trigger_pause_game() {}
+	virtual void on_trigger_unpause_game() {}
 
 	virtual ~state_functions() {}
 
@@ -18863,9 +18867,11 @@ struct state_functions {
 			st.trigger_wait_timers[owner] = a.time_n;
 			ra.flags |= 1;
 			return false;
-		case 5: // pause game - simulation-level no-op (UI handles actual pausing)
+		case 5: // pause game – notify UI layer
+			on_trigger_pause_game();
 			return true;
-		case 6: // unpause game - simulation-level no-op
+		case 6: // unpause game – notify UI layer
+			on_trigger_unpause_game();
 			return true;
 		case 7: // transmission (voice + text + center view)
 			on_trigger_transmission(owner, a.string_index);
