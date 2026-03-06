@@ -569,6 +569,100 @@ struct ui_functions: ui_util_functions {
 	bool quicksave_pending = false;
 	bool quickload_pending = false;
 
+	// ---------------------------------------------------------------------------
+	// Trigger-driven HUD notifications.
+	// When a trigger fires a display-text, transmission, or objectives action
+	// we store the message here and display it on-screen for a fixed duration.
+	// ---------------------------------------------------------------------------
+	struct hud_message_t {
+		a_string text;
+		// Expiry in simulated frames (set to current_frame + display_frames).
+		int expiry_frame = 0;
+	};
+	// Ring of up to 4 simultaneous HUD lines.
+	static const int k_hud_max_lines = 4;
+	hud_message_t hud_messages[k_hud_max_lines];
+	int hud_next_slot = 0;
+
+	// Next-scenario name set by the Set Next Scenario trigger action.  The
+	// main loop in gfxtest.cpp can inspect this field to initiate a transition.
+	a_string pending_next_scenario;
+
+	void push_hud_message(const a_string& text, int display_frames = 7 * 24) {
+		hud_messages[hud_next_slot % k_hud_max_lines] = {text, st.current_frame + display_frames};
+		++hud_next_slot;
+	}
+
+	// ---------------------------------------------------------------------------
+	// Trigger callback overrides.
+	// ---------------------------------------------------------------------------
+	virtual void on_trigger_display_text(int /*owner*/, const a_string& text) override {
+		if (text.empty()) return;
+		push_hud_message(text);
+		ui::log("trigger: display text: %s\n", text.c_str());
+	}
+
+	virtual void on_trigger_transmission(int owner, int string_index) override {
+		// Transmission includes implicit center-view (handled below via location
+		// stored in the action) and text display.  We show the text string here.
+		a_string msg = get_map_string((size_t)string_index);
+		if (!msg.empty()) {
+			push_hud_message(msg);
+			ui::log("trigger: transmission: %s\n", msg.c_str());
+		}
+	}
+
+	virtual void on_trigger_center_view(int owner, int location_id) override {
+		if (location_id <= 0 || (size_t)location_id > st.locations.size()) return;
+		const location& loc = st.locations.at((size_t)location_id - 1);
+		xy center = (loc.area.from + loc.area.to) / 2;
+		screen_pos.x = center.x - (int)(view_width / 2);
+		screen_pos.y = center.y - (int)(view_height / 2);
+	}
+
+	virtual void on_trigger_set_objectives(int /*owner*/, const a_string& text) override {
+		if (!text.empty()) {
+			ui::log("trigger: mission objectives: %s\n", text.c_str());
+		}
+	}
+
+	virtual void on_trigger_set_next_scenario(int /*owner*/, const a_string& scenario) override {
+		pending_next_scenario = scenario;
+		ui::log("trigger: next scenario: %s\n", scenario.c_str());
+	}
+
+	virtual void on_trigger_pause_game() override {
+		if (is_live_game_mode) {
+			is_paused = true;
+			ui::log("trigger: game paused\n");
+		}
+	}
+
+	virtual void on_trigger_unpause_game() override {
+		if (is_live_game_mode) {
+			is_paused = false;
+			ui::log("trigger: game unpaused\n");
+		}
+	}
+
+	virtual void on_victory_state(int owner, int state) override {
+		if (!is_live_game_mode) return;
+		// Auto-pause on any victory/defeat state change for the local player so
+		// the player has a moment to react before continuing or reloading.
+		// Victory states: 0=none, 1-2=defeated/eliminated, 3+=won (matches
+		// player_won: victory_state >= 3, player_defeated: state && !won).
+		static const int k_victory_state_won_threshold = 3;
+		if (owner == local_player_id && state != 0) {
+			is_paused = true;
+			bool won = (state >= k_victory_state_won_threshold);
+			const char* state_name = won ? "victory" : "defeat";
+			ui::log("trigger: local player %s (state %d)\n", state_name, state);
+			a_string msg = won ? a_string("Mission accomplished.") : a_string("Mission failed.");
+			push_hud_message(msg, 10 * 24);
+		}
+	}
+
+
 	xy screen_pos;
 
 	size_t screen_width;
@@ -1763,6 +1857,64 @@ struct ui_functions: ui_util_functions {
 		if (is_paused) {
 			fill_rectangle(data, data_pitch,
 				rect{xy(x, y + 3 * 13), xy(x + 16, y + 3 * 13 + 9)}, 162);
+		}
+	}
+
+	// Draw active HUD text messages (trigger display text / transmission /
+	// victory-defeat banners) at the bottom-centre of the game viewport.
+	// Each message is a row of 7-segment digits for the characters it can
+	// represent; unknown characters are skipped.  Messages expire after their
+	// configured display duration.
+	void draw_hud_messages(uint8_t* data, size_t data_pitch) {
+		int active = 0;
+		for (int i = 0; i < k_hud_max_lines; ++i) {
+			if (hud_messages[i].expiry_frame > 0 && st.current_frame < hud_messages[i].expiry_frame) {
+				++active;
+			}
+		}
+		if (active == 0) return;
+
+		// Layout: render from the bottom of the screen, most-recent on top.
+		// Each line is a narrow dark banner rendered via draw_small_number rows
+		// (7-segment font, each digit 8px wide, 11px tall).
+		const int margin = 4;
+		const int banner_padding = 3;
+		const int char_w = 8;
+		const int char_h = 11;
+		const int banner_h = char_h + 2 * banner_padding;
+		int y_bottom = (int)screen_height - margin - banner_padding;
+
+		for (int slot = hud_next_slot - 1; slot >= hud_next_slot - k_hud_max_lines && active > 0; --slot) {
+			int idx = ((slot % k_hud_max_lines) + k_hud_max_lines) % k_hud_max_lines;
+			const hud_message_t& hm = hud_messages[idx];
+			if (hm.expiry_frame <= 0 || st.current_frame >= hm.expiry_frame) continue;
+			--active;
+
+			// Use at most screen_width - 2*margin characters worth of width.
+			int max_chars = ((int)screen_width - 2 * margin) / char_w;
+			int show_chars = std::min((int)hm.text.size(), max_chars);
+			int banner_w = show_chars * char_w + 2 * banner_padding;
+			int bx = ((int)screen_width - banner_w) / 2;
+			int by = y_bottom - banner_h;
+
+			rect box{xy(bx, by), xy(bx + banner_w, by + banner_h)};
+			fill_rectangle(data, data_pitch, box, 0);
+			line_rectangle(data, data_pitch, box, 14);
+
+			// Render characters as digit blocks where possible.
+			xy p{bx + banner_padding, by + banner_padding};
+			for (int ci = 0; ci < show_chars; ++ci) {
+				char c = hm.text[ci];
+				if (c >= '0' && c <= '9') {
+					draw_digit_7seg(data, data_pitch, p, c - '0', 255);
+				} else if (c != ' ') {
+					// Non-digit, non-space: draw a simple bright block as a character indicator.
+					fill_rectangle(data, data_pitch, rect{p + xy(2, 3), p + xy(6, 9)}, 255);
+				}
+				p.x += char_w;
+			}
+
+			y_bottom = by - margin;
 		}
 	}
 
@@ -3548,6 +3700,7 @@ struct ui_functions: ui_util_functions {
 			draw_minimap(data, indexed_surface->pitch);
 			draw_ui(data, indexed_surface->pitch);
 			if (show_debug_overlay) draw_debug_overlay(data, indexed_surface->pitch);
+			draw_hud_messages(data, indexed_surface->pitch);
 		}
 		indexed_surface->unlock();
 

@@ -90,6 +90,8 @@ verifiable set of user-visible milestones:
   victory/defeat latch so result detection fires correctly after a reload.
   The game auto-pauses when victory or defeat is detected, giving the player a
   moment to react before resuming or reloading.
+  **F5/F8 now also push HUD messages** ("Saved.", "Loaded.", "No save.") so players
+  receive on-screen feedback without needing a console.
 - Remaining immediate slice: generate and commit `maps/test.rep` + `maps/test.hashes`
   using `--gen-test-replay` to activate the CI `validate-replay` gate.
 - **Trigger system expansion (Phase 4 continuation)**: Substantially expanded the
@@ -127,6 +129,33 @@ verifiable set of user-visible milestones:
     `on_trigger_transmission`, `on_trigger_center_view`, `on_trigger_set_objectives`,
     `on_trigger_set_next_scenario` virtual hooks to `state_functions`; the UI layer
     can override these to surface mission text and camera cues.
+- **Trigger callbacks wired to `ui_functions` (campaign playability)**:
+  - `on_trigger_pause_game` / `on_trigger_unpause_game` virtual hooks added to
+    `state_functions`; trigger actions 5/6 now call them; `ui_functions` overrides
+    to actually pause/resume the simulation — closes a hard campaign-blocking gap.
+  - `on_trigger_display_text`, `on_trigger_transmission` push on-screen HUD banners
+    via `push_hud_message()`; players now see mission text during campaign play.
+  - `on_trigger_center_view` scrolls the viewport to the trigger's location —
+    scripted camera cues now work correctly.
+  - `on_trigger_set_objectives` logs mission objectives; feeds a future objectives
+    HUD panel.
+  - `on_trigger_set_next_scenario` stores the transition target in
+    `ui_functions::pending_next_scenario`; the gfxtest main loop logs it at
+    mission victory; the Emscripten layer exposes it via `replay_get_value(7)`.
+  - `on_victory_state` in `ui_functions` auto-pauses the game for the local player
+    and pushes a "Mission accomplished." / "Mission failed." banner, ensuring
+    trigger-driven win/loss states are properly surfaced to the player.
+- **HUD text message overlay**: `draw_hud_messages()` renders up to 4 timed text
+  banners at the bottom-centre of the viewport.  Trigger text, save/load feedback,
+  and victory/defeat banners all use this path.
+- **`load_map_data` Emscripten entry point**: new `extern "C" void load_map_data(...)`
+  allows the JS/browser layer to load a campaign map from raw bytes into a live
+  interactive single-player session, closing the gap that previously limited the
+  browser build to replay-only mode.
+- **`replay_get_value(7/8)` + `replay_set_value(7, 0)`**: JS layer can now poll the
+  pending-next-scenario string and local-player victory state, and clear the
+  scenario pending flag after handling the transition.
+
 
 ---
 

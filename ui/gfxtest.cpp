@@ -207,6 +207,9 @@ struct main_t {
 					live_result_reported = true;
 					ui.is_paused = true;
 					log("single-player: victory at frame %d\n", ui.st.current_frame);
+					if (!ui.pending_next_scenario.empty()) {
+						log("single-player: next scenario -> '%s'\n", ui.pending_next_scenario.c_str());
+					}
 				} else if (ui.player_defeated(ui.local_player_id)) {
 					live_result_reported = true;
 					ui.is_paused = true;
@@ -227,6 +230,7 @@ struct main_t {
 			v->apm = ui.apm;
 			quicksave_slot = std::move(v);
 			log("quicksave: saved at frame %d\n", ui.st.current_frame);
+			ui.push_hud_message("Saved.", 3 * 24);
 		}
 		if (ui.quickload_pending) {
 			ui.quickload_pending = false;
@@ -241,8 +245,10 @@ struct main_t {
 				live_result_reported = false;
 				if (resume_after_quickload) ui.is_paused = false;
 				log("quickload: restored to frame %d\n", ui.st.current_frame);
+				ui.push_hud_message("Loaded.", 3 * 24);
 			} else {
 				log("quickload: no save available\n");
+				ui.push_hud_message("No save.", 3 * 24);
 			}
 		}
 	}
@@ -420,6 +426,15 @@ extern "C" double replay_get_value(int index) {
 		return (double)(uintptr_t)m->ui.replay_st.map_name.data();
 	case 6:
 		return (double)m->ui.replay_frame / m->ui.replay_st.end_frame;
+	// 7: pointer to the pending_next_scenario C-string (0 if none pending).
+	case 7:
+		return (double)(uintptr_t)(m->ui.pending_next_scenario.empty() ? nullptr : m->ui.pending_next_scenario.c_str());
+	// 8: local player victory state (0=none, ≥3=won, 1-2=defeated).
+	case 8: {
+		int local = m->ui.local_player_id;
+		if (local < 0 || local >= 12) return 0;
+		return (double)m->ui.st.players[local].victory_state;
+	}
 	default:
 		return 0;
 	}
@@ -444,7 +459,110 @@ extern "C" void replay_set_value(int index, double value) {
 		if (m->ui.replay_frame < 0) m->ui.replay_frame = 0;
 		if (m->ui.replay_frame > m->ui.replay_st.end_frame) m->ui.replay_frame = m->ui.replay_st.end_frame;
 		break;
+	// 7: clear the pending_next_scenario field (call after JS has handled it).
+	case 7:
+		m->ui.pending_next_scenario.clear();
+		break;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Emscripten: load a map from raw byte data for interactive single-player
+// campaign play.  The JS layer calls this with the raw .scx/.scm bytes and
+// passes player/race parameters for slot configuration.
+//
+// Parameters:
+//   data        – pointer to raw map file bytes
+//   len         – byte length of the map data
+//   local_player – preferred local slot (0-7; -1 for auto)
+//   local_race   – race index (0=zerg, 1=terran, 2=protoss, 5=random)
+// ---------------------------------------------------------------------------
+extern "C" void load_map_data(const uint8_t* data, size_t len, int local_player, int local_race) {
+	m->reset();
+	auto& ui = m->ui;
+
+	ui.is_replay_mode = false;
+	ui.is_live_game_mode = true;
+	ui.default_enforce_local_visibility = true;
+	ui.enforce_local_visibility = true;
+
+	// Write the map bytes to the Emscripten virtual filesystem so that the
+	// existing file-based load_map_file path can read them.
+	const char* tmp_map_path = "/tmp/campaign_map.scx";
+	{
+		FILE* f = fopen(tmp_map_path, "wb");
+		if (f) {
+			fwrite(data, 1, len, f);
+			fclose(f);
+		}
+	}
+
+	int selected_local = -1;
+	game_load_functions load_funcs(ui.st);
+	load_funcs.load_map_file(tmp_map_path, [&]() {
+		// Determine local slot.
+		if (local_player >= 0 && local_player < 8) {
+			selected_local = local_player;
+		} else {
+			// Auto-select: prefer authored occupied slot, then first available.
+			for (int i = 0; i < 8; ++i) {
+				int c = ui.st.players[i].controller;
+				if (c == player_t::controller_occupied) { selected_local = i; break; }
+			}
+			if (selected_local == -1) {
+				for (int i = 0; i < 8; ++i) {
+					int c = ui.st.players[i].controller;
+					if (c == player_t::controller_open || c == player_t::controller_computer) {
+						selected_local = i;
+						break;
+					}
+				}
+			}
+		}
+		if (selected_local == -1) selected_local = 0;
+
+		// Ensure the local slot is occupiable.
+		auto& lp = ui.st.players[selected_local];
+		if (lp.controller == player_t::controller_open ||
+		    lp.controller == player_t::controller_computer ||
+		    lp.controller == player_t::controller_computer_game) {
+			lp.controller = player_t::controller_occupied;
+		}
+		if (local_race >= 0 && local_race <= 5 && (int)lp.race == 5) {
+			lp.race = (race_t)local_race;
+		}
+		if ((int)lp.race > 2) {
+			// Simple LCG (same multiplier/increment used elsewhere in the codebase)
+			// to pick a random concrete race (0=zerg, 1=terran, 2=protoss) when the
+			// slot still has race=random (>2) after the caller's assignment.
+			uint32_t seed = (uint32_t)len ^ (uint32_t)local_player;
+			seed = seed * 22695477u + 1u;
+			lp.race = (race_t)((seed >> 16) % 3u);
+		}
+
+		// Set AI for remaining open slots.
+		for (int i = 0; i < 8; ++i) {
+			if (i == selected_local) continue;
+			int c = ui.st.players[i].controller;
+			if (c == player_t::controller_open || c == player_t::controller_computer) {
+				ui.st.players[i].controller = player_t::controller_computer_game;
+				if ((int)ui.st.players[i].race > 2) {
+					ui.st.players[i].race = (race_t)((i % 3));
+				}
+			}
+		}
+
+		load_funcs.setup_info.victory_condition = 1;
+		load_funcs.setup_info.starting_units = 1;
+	});
+
+	ui.local_player_id = selected_local;
+	ui.enemy_player_id = -1;
+	ui.replay_frame = ui.st.current_frame;
+	m->live_result_reported = false;
+	ui.set_image_data();
+	any_replay_loaded = true;
+	ui::log("load_map_data: local_slot=%d map=%s\n", selected_local, tmp_map_path);
 }
 
 #include <emscripten/bind.h>

@@ -95,13 +95,27 @@ The goal is to make compatibility work concrete, testable, and incrementally shi
 | `get_map_string()` in `state_functions` | `bwgame.h` | Mission text accessible from all trigger action handlers without going through `game_load_functions`. |
 | Trigger event virtual callbacks | `bwgame.h` | `on_trigger_display_text`, `on_trigger_transmission`, `on_trigger_center_view`, `on_trigger_set_objectives`, `on_trigger_set_next_scenario` hooks in `state_functions`; UI layer can override to surface mission text and camera cues. |
 
+### Changes landed (Phase 4 continuation – campaign playability)
+
+| Change | Files | What it enables |
+|---|---|---|
+| `on_trigger_pause_game` / `on_trigger_unpause_game` virtual hooks | `bwgame.h` | Trigger actions 5/6 (Pause/Unpause Game) now call virtual callbacks; `ui_functions` overrides these to actually pause/resume the simulation loop, closing a critical campaign-blocking behaviour gap. |
+| Trigger callbacks wired in `ui_functions` | `ui/ui.h` | `on_trigger_display_text`, `on_trigger_transmission`, `on_trigger_center_view`, `on_trigger_set_objectives`, `on_trigger_set_next_scenario`, `on_trigger_pause_game`, `on_trigger_unpause_game` all have concrete implementations in `ui_functions`: text fires `push_hud_message`; center-view scrolls the viewport; objectives are logged; next-scenario stores the transition target. |
+| `on_victory_state` in `ui_functions` | `ui/ui.h` | Victory/defeat state changes from triggers (action 1/2) now auto-pause the game for the local player and push a "Mission accomplished"/"Mission failed" HUD message, matching BW campaign flow expectations. |
+| HUD text message overlay | `ui/ui.h` | `push_hud_message()` stores up to 4 timed on-screen banners (7-segment font, bottom-centre of viewport); all trigger text events surface here, giving players visible mission feedback. `draw_hud_messages()` renders them until expiry. |
+| `pending_next_scenario` field | `ui/ui.h` | Stores the scenario name from the last Set Next Scenario trigger action; gfxtest main loop logs the transition target; Emscripten JS layer can read it via `replay_get_value(7)` and clear it via `replay_set_value(7, 0)`. |
+| `replay_get_value` extensions (indices 7, 8) | `ui/gfxtest.cpp` | JS/browser layer can now read `pending_next_scenario` pointer (index 7) and local player victory state (index 8); `replay_set_value(7, 0)` clears the scenario pending flag after JS handles the transition. |
+| `load_map_data` Emscripten entry point | `ui/gfxtest.cpp` | New `extern "C" void load_map_data(const uint8_t*, size_t, int, int)` allows the JS layer to load a map from raw bytes into an interactive single-player session, enabling browser-side campaign mission start without requiring file system access. Writes to `/tmp/campaign_map.scx` in the Emscripten virtual FS. |
+| Quicksave/quickload HUD feedback | `ui/gfxtest.cpp` | F5/F8 quicksave and quickload now push "Saved."/"Loaded."/"No save." HUD messages so players see confirmation without needing a console. |
+| Next-scenario logging in gfxtest main loop | `ui/gfxtest.cpp` | When `pending_next_scenario` is non-empty at mission victory, the main loop logs `single-player: next scenario -> '<name>'` for triage and future campaign-transition wiring. |
+
 ## Campaign-readiness tracker (Phase 4 foundation)
 
 | Area | Priority | Status | Current blocker | Deterministic check |
 |---|---|---|---|---|
-| Trigger behavior parity (mission progression) | P0 | **In progress** | Core trigger ops now covered; remaining gaps are leaderboard/score displays, briefing-specific conditions, and campaign transition. | `./gfxtest --validate-replay --replay <campaign-trigger-fixture.rep>` must print `validate: PASS` and exit `0` once fixture is landed. |
+| Trigger behavior parity (mission progression) | P0 | **In progress** | Core trigger ops covered; trigger callbacks now wired to UI (pause, text, center-view, victory); remaining gaps are briefing-specific conditions and full campaign-transition automation. | `./gfxtest --validate-replay --replay <campaign-trigger-fixture.rep>` must print `validate: PASS` and exit `0` once fixture is landed. |
 | Briefing entry/exit flow stability | P0 | **Planned** | No dedicated fixture yet for briefing-to-mission transition loop and cancel/continue handling. | `./gfxtest --verify-hashes <briefing-flow.hashes> --replay <briefing-flow.rep>` must print `verify-hashes: PASS` and exit `0` once fixture is landed. |
-| Save/load state restore invariants | P1 | **Partially validated** | In-memory quicksave (F5) and quickload (F8) are now wired in single-player live map mode; state deep-copies via existing `copy_state` infrastructure. Full file-backed save/load and a replay-backed restore fixture remain for the next slice. | `./gfxtest --verify-hashes <save-load-restore.hashes> --replay <save-load-restore.rep>` must print `verify-hashes: PASS` and exit `0` once fixture is landed. |
+| Save/load state restore invariants | P1 | **Partially validated** | In-memory quicksave (F5) and quickload (F8) wired with HUD feedback; `pending_next_scenario` enables JS-side campaign transition tracking. Full file-backed save/load and a replay-backed restore fixture remain for the next slice. | `./gfxtest --verify-hashes <save-load-restore.hashes> --replay <save-load-restore.rep>` must print `verify-hashes: PASS` and exit `0` once fixture is landed. |
 
 ### Phase 4 kickoff owners / next slices
 
