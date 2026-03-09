@@ -73,6 +73,8 @@ struct game_vars {
 	int local_player_id = -1;
 	int enemy_player_id = -1;
 	bool is_replay = false;
+	bool has_next_scenario = false;
+	bwgame::a_string next_scenario;
 	
 	std::vector<Event> events;
 	bool left_game = false;
@@ -119,6 +121,12 @@ struct openbwapi_functions: bwgame::replay_functions {
 		destroyed_units.push_back(id);
 		auto i = units_lookup.find((int)id.raw_value);
 		if (i != units_lookup.end()) i->second->u = nullptr;
+	}
+
+	virtual void on_trigger_set_next_scenario(int owner, const bwgame::a_string& scenario) override {
+		if (owner != vars.local_player_id || scenario.empty()) return;
+		vars.next_scenario = scenario;
+		vars.has_next_scenario = true;
 	}
 
 	void enable_ui() {
@@ -1022,6 +1030,15 @@ struct Game_impl {
 	std::string map_filename;
 	std::string map_full_filename;
 	std::string set_map_filename;
+
+	std::string resolve_campaign_scenario_path(const std::string& scenario) const {
+		if (scenario.empty()) return scenario;
+		if (scenario[0] == '/' || scenario[0] == '\\') return scenario;
+		if (scenario.size() > 1 && scenario[1] == ':') return scenario;
+		auto slash_pos = map_full_filename.find_last_of("/\\");
+		if (slash_pos == std::string::npos) return scenario;
+		return map_full_filename.substr(0, slash_pos + 1) + scenario;
+	}
 	
 	std::unordered_map<std::string, std::unique_ptr<saved_state>> snapshots;
 
@@ -1050,6 +1067,8 @@ struct Game_impl {
 
 	void load_map() {
 		auto& filename = set_map_filename;
+		vars.has_next_scenario = false;
+		vars.next_scenario.clear();
 
 		fst.game_st = bwgame::game_state();
 		st = bwgame::state();
@@ -1172,6 +1191,9 @@ struct Game_impl {
 
 		if (vars.left_game || game_is_won() || game_is_lost()) {
 			vars.left_game = false;
+			if (!vars.game_type_melee && game_is_won() && vars.has_next_scenario) {
+				set_map_filename = resolve_campaign_scenario_path(vars.next_scenario);
+			}
 			vars.events.push_back({EventType::MatchFrame});
 			vars.events.push_back({EventType::MatchEnd, game_is_won()});
 
