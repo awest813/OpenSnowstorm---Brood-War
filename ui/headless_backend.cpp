@@ -16,6 +16,8 @@ namespace native_window {
 	bool window::get_key_state(int) { return false; }
 	bool window::get_mouse_button_state(int) { return false; }
 	void window::update_surface() {}
+	void window::set_fullscreen(bool) {}
+	bool window::is_fullscreen() const { return false; }
 	window::operator bool() const { return false; }
 }
 
@@ -52,4 +54,7 @@ namespace native_sound {
 	void stop(int) {}
 	void set_volume(int, int) {}
 	std::unique_ptr<sound> load_wav(const void*, size_t) { return nullptr; }
+	void play_music(const void*, size_t) {}
+	void stop_music() {}
+	void set_music_volume(int) {}
 }

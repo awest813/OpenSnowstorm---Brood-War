@@ -1,6 +1,7 @@
 #include "../bwgame.h"
 #include "../replay.h"
 #include "common.h"
+#include "client_settings.h"
 #include "native_sound.h"
 #include "native_window.h"
 #include "native_window_drawing.h"
@@ -750,6 +751,17 @@ struct ui_functions : ui_util_functions {
   bool request_restart_mission = false;
   bool request_continue_after_debrief = false;
 
+  // In-game F10 game menu / options overlay.  When either is open the
+  // simulation is paused and command hotkeys are ignored.
+  bool game_menu_open = false;
+  int game_menu_index = 0;
+  bool settings_open = false;
+  int settings_index = 0;
+  bool mission_over = false;
+
+  client_settings_t settings;
+  a_string options_path = "options.ini";
+
   // ---------------------------------------------------------------------------
   // Trigger-driven HUD notifications.
   // When a trigger fires a display-text, transmission, or objectives action
@@ -914,6 +926,8 @@ struct ui_functions : ui_util_functions {
     static const int k_victory_state_won_threshold = 3;
     if (owner == local_player_id && state != 0) {
       is_paused = true;
+      mission_over = true;
+      close_client_overlays(false);
       bool won = (state >= k_victory_state_won_threshold);
       const char *state_name = won ? "victory" : "defeat";
       ui::log("trigger: local player %s (state %d)\n", state_name, state);
@@ -952,7 +966,9 @@ struct ui_functions : ui_util_functions {
   }
 
   enum struct response_kind { what, yes, why, death };
+  bool speech_playback = false;
   void play_unit_response_sound(unit_t *u, response_kind kind) {
+    if (!settings.sound_enabled || !settings.unit_speech) return;
     if (!u || !u->unit_type) return;
     int sound_id = -1;
     if (kind == response_kind::what) {
@@ -969,7 +985,9 @@ struct ui_functions : ui_util_functions {
       }
     }
     if (sound_id >= 0 && sound_id < (int)sound_filenames.size()) {
+       speech_playback = true;
        play_sound(sound_id, u->position, u, false);
+       speech_playback = false;
     }
   }
 
@@ -978,6 +996,8 @@ struct ui_functions : ui_util_functions {
   a_vector<std::chrono::high_resolution_clock::time_point> last_played_sound;
 
   int global_volume = 50;
+  int sfx_volume = 50;
+  int music_volume = 50;
   a_unordered_map<a_string, std::unique_ptr<native_sound::sound>> custom_sounds;
 
   struct sound_channel {
@@ -1009,19 +1029,98 @@ struct ui_functions : ui_util_functions {
   a_list<minimap_ping_info> active_minimap_pings;
   a_vector<sound_channel> sound_channels;
 
+  int effective_sfx_volume() const {
+    if (!settings.sound_enabled) return 0;
+    return clamp_int(sfx_volume, 0, 100);
+  }
+  int effective_music_volume() const {
+    if (!settings.sound_enabled) return 0;
+    return clamp_int(music_volume, 0, 100);
+  }
+
+  void apply_audio_settings() {
+    global_volume = effective_sfx_volume();
+    native_sound::set_music_volume(128 * effective_music_volume() / 100);
+    for (auto &c : sound_channels) {
+      if (c.playing) {
+        native_sound::set_volume(&c - sound_channels.data(),
+                                 (128 - 4) * (c.volume * effective_sfx_volume() / 100) /
+                                     100);
+      }
+    }
+  }
+
+  void apply_video_settings() {
+    if (wnd) wnd.set_fullscreen(settings.fullscreen);
+  }
+
+  void apply_client_settings(const client_settings_t &s) {
+    settings = s;
+    int speed = std::max(1, s.game_speed);
+    game_speed = fp8::integer(speed);
+    sfx_volume = clamp_int(s.sfx_volume, 0, 100);
+    music_volume = clamp_int(s.music_volume, 0, 100);
+    default_enforce_local_visibility = s.fog_of_war;
+    if (is_live_game_mode) enforce_local_visibility = s.fog_of_war;
+    hotkeys.stop = s.hotkey_stop;
+    hotkeys.hold = s.hotkey_hold;
+    hotkeys.attack = s.hotkey_attack;
+    hotkeys.patrol = s.hotkey_patrol;
+    hotkeys.build = s.hotkey_build;
+    hotkeys.cloak = s.hotkey_cloak;
+    hotkeys.burrow = s.hotkey_burrow;
+    hotkeys.siege = s.hotkey_siege;
+    hotkeys.stim = s.hotkey_stim;
+    hotkeys.unload = s.hotkey_unload;
+    hotkeys.lift = s.hotkey_lift;
+    hotkeys.return_cargo = s.hotkey_return_cargo;
+    hotkeys.merge = s.hotkey_merge;
+    hotkeys.cancel = s.hotkey_cancel;
+    apply_audio_settings();
+    apply_video_settings();
+  }
+
+  client_settings_t capture_client_settings() const {
+    client_settings_t s = settings;
+    int raw = game_speed.raw_value;
+    if (raw >= 256) s.game_speed = raw / 256;
+    s.sfx_volume = sfx_volume;
+    s.music_volume = music_volume;
+    s.hotkey_stop = (char)hotkeys.stop;
+    s.hotkey_hold = (char)hotkeys.hold;
+    s.hotkey_attack = (char)hotkeys.attack;
+    s.hotkey_patrol = (char)hotkeys.patrol;
+    s.hotkey_build = (char)hotkeys.build;
+    s.hotkey_cloak = (char)hotkeys.cloak;
+    s.hotkey_burrow = (char)hotkeys.burrow;
+    s.hotkey_siege = (char)hotkeys.siege;
+    s.hotkey_stim = (char)hotkeys.stim;
+    s.hotkey_unload = (char)hotkeys.unload;
+    s.hotkey_lift = (char)hotkeys.lift;
+    s.hotkey_return_cargo = (char)hotkeys.return_cargo;
+    s.hotkey_merge = (char)hotkeys.merge;
+    s.hotkey_cancel = (char)hotkeys.cancel;
+    return s;
+  }
+
+  void persist_client_settings() {
+    settings = capture_client_settings();
+    if (!save_client_settings_file(options_path.c_str(), settings)) {
+      ui::log("failed to write %s\n", options_path.c_str());
+    }
+  }
+
   void set_volume(int volume) {
     if (volume < 0)
       volume = 0;
     else if (volume > 100)
       volume = 100;
-    global_volume = volume;
-    for (auto &c : sound_channels) {
-      if (c.playing) {
-        native_sound::set_volume(&c - sound_channels.data(),
-                                 (128 - 4) * (c.volume * global_volume / 100) /
-                                     100);
-      }
-    }
+    sfx_volume = volume;
+    music_volume = volume;
+    settings.sfx_volume = volume;
+    settings.music_volume = volume;
+    settings.sound_enabled = volume > 0;
+    apply_audio_settings();
   }
 
   sound_channel *get_sound_channel(int priority) {
@@ -1051,7 +1150,9 @@ struct ui_functions : ui_util_functions {
 
   virtual void play_sound(int id, xy position, const unit_t *source_unit,
                           bool add_race_index) override {
-    if (global_volume == 0)
+    if (effective_sfx_volume() == 0)
+      return;
+    if (!speech_playback && !settings.unit_sounds)
       return;
     if (add_race_index)
       id += 1;
@@ -1127,7 +1228,8 @@ struct ui_functions : ui_util_functions {
       auto *c = get_sound_channel(sound_type->priority);
       if (c) {
         native_sound::play(c - sound_channels.data(), &*s,
-                           (128 - 4) * (volume * global_volume / 100) / 100,
+                           (128 - 4) * (volume * effective_sfx_volume() / 100) /
+                               100,
                            pan);
         c->playing = true;
         c->sound_type = sound_type;
@@ -1140,7 +1242,7 @@ struct ui_functions : ui_util_functions {
   }
 
   void play_wav(a_string filename) {
-    if (filename.empty())
+    if (filename.empty() || effective_sfx_volume() == 0)
       return;
     a_vector<uint8_t> data;
     load_data_file(data, "glue\\wav\\" + filename);
@@ -1155,7 +1257,7 @@ struct ui_functions : ui_util_functions {
     }
     auto s = native_sound::load_wav(data.data(), data.size());
     if (s) {
-      native_sound::play(1, s.get(), 128 * global_volume / 100, 0);
+      native_sound::play(1, s.get(), 128 * effective_sfx_volume() / 100, 0);
       custom_sounds[filename] = std::move(s);
     }
   }
@@ -1177,7 +1279,7 @@ struct ui_functions : ui_util_functions {
       return;
     }
     native_sound::play_music(data.data(), data.size());
-    native_sound::set_music_volume(128 * global_volume / 100);
+    native_sound::set_music_volume(128 * effective_music_volume() / 100);
   }
 
   a_vector<uint8_t> creep_random_tile_indices = a_vector<uint8_t>(256 * 256);
@@ -1219,62 +1321,178 @@ struct ui_functions : ui_util_functions {
 
     load_all_image_data(load_data_file);
     load_options();
+    apply_client_settings(settings);
   }
 
   void load_options() {
-    FILE *f = fopen("options.ini", "r");
-    if (!f) return;
-    char line[256];
-    while (fgets(line, sizeof(line), f)) {
-      std::string l = line;
-      size_t eq = l.find('=');
-      if (eq == std::string::npos)
-        continue;
-      std::string key = l.substr(0, eq);
-      std::string val = l.substr(eq + 1);
-      auto trim = [](std::string &s) {
-        size_t first = s.find_first_not_of(" \t\r\n");
-        if (first == std::string::npos) return;
-        size_t last = s.find_last_not_of(" \t\r\n");
-        s = s.substr(first, (last - first + 1));
-      };
-      trim(key);
-      trim(val);
-      if (key == "game_speed") {
-        int v = atoi(val.c_str());
-        if (v > 0) game_speed = fp8::integer(v);
-      } else if (key == "volume") {
-        set_volume(atoi(val.c_str()));
-      } else if (key == "hotkey_stop" && !val.empty())
-        hotkeys.stop = val[0];
-      else if (key == "hotkey_hold" && !val.empty())
-        hotkeys.hold = val[0];
-      else if (key == "hotkey_attack" && !val.empty())
-        hotkeys.attack = val[0];
-      else if (key == "hotkey_patrol" && !val.empty())
-        hotkeys.patrol = val[0];
-      else if (key == "hotkey_build" && !val.empty())
-        hotkeys.build = val[0];
-      else if (key == "hotkey_cloak" && !val.empty())
-        hotkeys.cloak = val[0];
-      else if (key == "hotkey_burrow" && !val.empty())
-        hotkeys.burrow = val[0];
-      else if (key == "hotkey_siege" && !val.empty())
-        hotkeys.siege = val[0];
-      else if (key == "hotkey_stim" && !val.empty())
-        hotkeys.stim = val[0];
-      else if (key == "hotkey_unload" && !val.empty())
-        hotkeys.unload = val[0];
-      else if (key == "hotkey_lift" && !val.empty())
-        hotkeys.lift = val[0];
-      else if (key == "hotkey_return_cargo" && !val.empty())
-        hotkeys.return_cargo = val[0];
-      else if (key == "hotkey_merge" && !val.empty())
-        hotkeys.merge = val[0];
-      else if (key == "hotkey_cancel" && !val.empty())
-        hotkeys.cancel = val[0];
+    client_settings_t loaded = settings;
+    if (!load_client_settings_file(options_path.c_str(), loaded)) return;
+    apply_client_settings(loaded);
+  }
+
+  void save_options() {
+    persist_client_settings();
+  }
+
+  bool client_overlay_open() const { return game_menu_open || settings_open; }
+
+  void close_client_overlays(bool resume) {
+    game_menu_open = false;
+    settings_open = false;
+    game_menu_index = 0;
+    settings_index = 0;
+    if (resume && !mission_over) is_paused = false;
+  }
+
+  void open_game_menu() {
+    if (mission_over) {
+      request_quit_to_menu = true;
+      return;
     }
-    fclose(f);
+    settings_open = false;
+    game_menu_open = true;
+    game_menu_index = 0;
+    is_paused = true;
+  }
+
+  void toggle_game_menu() {
+    if (settings_open) {
+      settings_open = false;
+      game_menu_open = true;
+      is_paused = true;
+      return;
+    }
+    if (game_menu_open) {
+      close_client_overlays(true);
+      return;
+    }
+    open_game_menu();
+  }
+
+  void toggle_fullscreen_setting() {
+    settings.fullscreen = !settings.fullscreen;
+    apply_video_settings();
+    persist_client_settings();
+  }
+
+  void apply_settings_item(int delta) {
+    cycle_settings_item(settings, settings_index, delta);
+    apply_client_settings(settings);
+    persist_client_settings();
+  }
+
+  void activate_game_menu_item() {
+    switch ((game_menu_item)game_menu_index) {
+    case game_menu_item::return_to_game:
+      close_client_overlays(true);
+      break;
+    case game_menu_item::options:
+      game_menu_open = false;
+      settings_open = true;
+      settings_index = 0;
+      is_paused = true;
+      break;
+    case game_menu_item::save_game:
+      save_slot_save_pending = current_save_slot > 0 ? current_save_slot : 1;
+      break;
+    case game_menu_item::load_game:
+      save_slot_load_pending = current_save_slot > 0 ? current_save_slot : 1;
+      close_client_overlays(false);
+      break;
+    case game_menu_item::restart_mission:
+      close_client_overlays(false);
+      request_restart_mission = true;
+      break;
+    case game_menu_item::exit_to_menu:
+      close_client_overlays(false);
+      request_quit_to_menu = true;
+      break;
+    default:
+      break;
+    }
+  }
+
+  bool handle_client_overlay_key(const native_window::event_t &e) {
+    if (!client_overlay_open()) return false;
+    int count = settings_open ? (int)settings_item::count : (int)game_menu_item::count;
+    int &index = settings_open ? settings_index : game_menu_index;
+    if (e.sym == 27) {
+      if (settings_open) {
+        settings_open = false;
+        game_menu_open = true;
+        persist_client_settings();
+      } else {
+        close_client_overlays(true);
+      }
+      return true;
+    }
+    if (e.scancode == 82 || e.sym == 'w') {
+      index = (index + count - 1) % count;
+      return true;
+    }
+    if (e.scancode == 81 || e.sym == 's') {
+      index = (index + 1) % count;
+      return true;
+    }
+    if (e.scancode == 80) { // left
+      if (settings_open) apply_settings_item(-1);
+      return true;
+    }
+    if (e.scancode == 79) { // right
+      if (settings_open) apply_settings_item(1);
+      return true;
+    }
+    if (e.sym == '\r' || e.sym == ' ' || e.scancode == 40 || e.scancode == 88) {
+      if (settings_open) apply_settings_item(1);
+      else activate_game_menu_item();
+      return true;
+    }
+    return true; // swallow other keys while overlay is open
+  }
+
+  bool handle_client_overlay_click(int mx, int my) {
+    if (!client_overlay_open()) return false;
+    if (settings_open) {
+      auto layout = make_settings_layout((int)screen_width, (int)screen_height);
+      for (int i = 0; i < layout.count; ++i) {
+        if (layout.item_rect(i).contains(mx, my)) {
+          settings_index = i;
+          apply_settings_item(1);
+          return true;
+        }
+      }
+      return true;
+    }
+    auto layout = make_game_menu_layout((int)screen_width, (int)screen_height);
+    for (int i = 0; i < layout.count; ++i) {
+      if (layout.item_rect(i).contains(mx, my)) {
+        game_menu_index = i;
+        activate_game_menu_item();
+        return true;
+      }
+    }
+    return true;
+  }
+
+  void handle_client_overlay_hover(int mx, int my) {
+    if (!client_overlay_open()) return;
+    if (settings_open) {
+      auto layout = make_settings_layout((int)screen_width, (int)screen_height);
+      for (int i = 0; i < layout.count; ++i) {
+        if (layout.item_rect(i).contains(mx, my)) {
+          settings_index = i;
+          return;
+        }
+      }
+      return;
+    }
+    auto layout = make_game_menu_layout((int)screen_width, (int)screen_height);
+    for (int i = 0; i < layout.count; ++i) {
+      if (layout.item_rect(i).contains(mx, my)) {
+        game_menu_index = i;
+        return;
+      }
+    }
   }
 
   virtual void on_action(int owner, int action) override {
@@ -1855,7 +2073,7 @@ struct ui_functions : ui_util_functions {
       }
       draw_image(image, data, data_pitch, st.players[sprite->owner].color);
     }
-    if (draw_health_bars_u && !u_invincible(draw_health_bars_u)) {
+    if (draw_health_bars_u && !u_invincible(draw_health_bars_u) && settings.show_health_bars) {
       draw_health_bars(sprite, draw_health_bars_u, data, data_pitch);
     }
   }
@@ -2530,7 +2748,8 @@ struct ui_functions : ui_util_functions {
               draw_frame(wf, false, data, data_pitch, wx, wy, screen_width, screen_height, hp_color);
           }
           // Health Bar
-          draw_health_bars(u->sprite, u, data, data_pitch);
+          if (settings.show_health_bars)
+            draw_health_bars(u->sprite, u, data, data_pitch);
       } else {
           // Multi Units: Grid of small wireframes
           int row = 0, col = 0;
@@ -2914,7 +3133,7 @@ struct ui_functions : ui_util_functions {
     }
   }
 
-  fp8 game_speed = fp8::integer(1);
+  fp8 game_speed = fp8::integer(4);
 
   bool show_debug_overlay = false;
 
@@ -2956,6 +3175,8 @@ struct ui_functions : ui_util_functions {
   void resize(int width, int height) {
     if (!wnd && create_window)
       wnd.create("OpenBW", 0, 0, width, height);
+    if (wnd && settings.fullscreen && !wnd.is_fullscreen())
+      wnd.set_fullscreen(true);
     screen_width = width;
     screen_height = height;
     // view_scale = fp16::integer(1) - (fp16::integer(1) / 4);
@@ -4626,6 +4847,11 @@ struct ui_functions : ui_util_functions {
           resize(e.width, e.height);
           break;
         case native_window::event_t::type_mouse_button_down:
+          if (client_overlay_open()) {
+            if (e.button == 1)
+              handle_client_overlay_click(e.mouse_x, e.mouse_y);
+            break;
+          }
           if (e.button == 1) {
             check_move_minimap(e);
             check_move_replay_slider(e);
@@ -4672,6 +4898,10 @@ struct ui_functions : ui_util_functions {
           }
           break;
         case native_window::event_t::type_mouse_motion:
+          if (client_overlay_open()) {
+            handle_client_overlay_hover(e.mouse_x, e.mouse_y);
+            break;
+          }
           if (e.button_state & 1) {
             if (is_moving_minimap)
               check_move_minimap(e);
@@ -4712,12 +4942,30 @@ struct ui_functions : ui_util_functions {
           }
           break;
         case native_window::event_t::type_key_down:
-          // if (e.sym == 'q') {
-          //	use_new_images = !use_new_images;
-          // }
 #ifndef EMSCRIPTEN
+          // F3 (scancode 60) toggles the debug overlay in all modes.
+          if (e.scancode == 60) {
+            show_debug_overlay = !show_debug_overlay;
+            ui::log("debug overlay %s\n",
+                    show_debug_overlay ? "enabled" : "disabled");
+            break;
+          }
+          {
+            bool alt = wnd.get_key_state(226) || wnd.get_key_state(230);
+            if (alt && (e.sym == '\r' || e.sym == '\n' || e.scancode == 40)) {
+              toggle_fullscreen_setting();
+              break;
+            }
+          }
+          if (e.scancode == 67) { // F10
+            toggle_game_menu();
+            break;
+          }
+          if (handle_client_overlay_key(e))
+            break;
           if (e.sym == ' ' || e.sym == 'p') {
-            is_paused = !is_paused;
+            if (!mission_over)
+              is_paused = !is_paused;
           }
           if (!is_live_game_mode && (e.sym == 'a' || e.sym == 'u')) {
             if (game_speed < fp8::integer(128))
@@ -4734,17 +4982,11 @@ struct ui_functions : ui_util_functions {
             else
               replay_frame -= t;
           }
-          // F3 (scancode 60) toggles the debug overlay in all modes.
-          if (e.scancode == 60) {
-            show_debug_overlay = !show_debug_overlay;
-            ui::log("debug overlay %s\n",
-                    show_debug_overlay ? "enabled" : "disabled");
-          }
           if (is_live_game_mode && has_local_player()) {
             bool ctrl = wnd.get_key_state(224) || wnd.get_key_state(228);
             bool shift = wnd.get_key_state(225) || wnd.get_key_state(229);
 
-            constexpr int k_scan_f5 = 62, k_scan_f6 = 63, k_scan_f7 = 64, k_scan_f8 = 65, k_scan_f9 = 66, k_scan_f10 = 67;
+            constexpr int k_scan_f5 = 62, k_scan_f6 = 63, k_scan_f7 = 64, k_scan_f8 = 65, k_scan_f9 = 66;
             if (e.scancode == k_scan_f5) {
               quicksave_pending = true;
             } else if (e.scancode == k_scan_f6) {
@@ -4753,8 +4995,6 @@ struct ui_functions : ui_util_functions {
               quickload_pending = true;
             } else if (e.scancode == k_scan_f9) {
               save_slot_load_pending = current_save_slot;
-            } else if (e.scancode == k_scan_f10) {
-              request_quit_to_menu = true;
             } else if (e.scancode == k_scan_f7) {
               request_restart_mission = true;
             } else if (e.sym == '\r' || e.sym == '\n') {
@@ -4764,14 +5004,19 @@ struct ui_functions : ui_util_functions {
                   pending_order_mode != pending_order_mode_t::none) {
                 cancel_live_build_placement();
                 pending_order_mode = pending_order_mode_t::none;
-              } else if (is_paused) {
+              } else if (mission_over) {
                 request_quit_to_menu = true;
+              } else {
+                open_game_menu();
               }
             } else if (e.sym == 'u') {
               if (game_speed < fp8::integer(128))
                 game_speed *= 2;
             } else if (e.sym == 'f') {
               enforce_local_visibility = !enforce_local_visibility;
+              settings.fog_of_war = enforce_local_visibility;
+              default_enforce_local_visibility = enforce_local_visibility;
+              persist_client_settings();
               ui::log("single-player: fog of war %s\n",
                       enforce_local_visibility ? "enabled" : "disabled");
             } else if (e.sym == hotkeys.stop) {
@@ -4876,21 +5121,38 @@ struct ui_functions : ui_util_functions {
           last_input_poll = now - input_poll_speed;
         else
           last_input_poll += input_poll_speed;
-        std::array<int, 6> scroll_speeds = {2, 2, 4, 6, 6, 8};
-
-        if (!is_drag_selecting) {
-          int scroll_speed = scroll_speeds[scroll_speed_n];
+        if (!is_drag_selecting && !client_overlay_open()) {
+          static const int k_scroll_table[6] = {2, 3, 4, 6, 8, 10};
+          int kb = clamp_int(settings.keyboard_scroll, 1, 6);
+          int key_speed = k_scroll_table[kb - 1];
           auto prev_screen_pos = screen_pos;
           if (wnd.get_key_state(81))
-            screen_pos.y += scroll_speed;
+            screen_pos.y += key_speed;
           else if (wnd.get_key_state(82))
-            screen_pos.y -= scroll_speed;
+            screen_pos.y -= key_speed;
           if (wnd.get_key_state(79))
-            screen_pos.x += scroll_speed;
+            screen_pos.x += key_speed;
           else if (wnd.get_key_state(80))
-            screen_pos.x -= scroll_speed;
+            screen_pos.x -= key_speed;
+          if (settings.mouse_scroll > 0) {
+            int mx = -1, my = -1;
+            wnd.get_cursor_pos(&mx, &my);
+            const int margin = 4;
+            int mouse_speed =
+                k_scroll_table[clamp_int(settings.mouse_scroll, 1, 6) - 1];
+            if (mx != -1 && my != -1) {
+              if (mx <= margin)
+                screen_pos.x -= mouse_speed;
+              else if (mx >= (int)screen_width - margin)
+                screen_pos.x += mouse_speed;
+              if (my <= margin)
+                screen_pos.y -= mouse_speed;
+              else if (my >= (int)screen_height - margin)
+                screen_pos.y += mouse_speed;
+            }
+          }
           if (screen_pos != prev_screen_pos) {
-            if (scroll_speed_n != scroll_speeds.size() - 1)
+            if (scroll_speed_n < 5)
               ++scroll_speed_n;
           } else
             scroll_speed_n = 0;
@@ -5081,6 +5343,11 @@ struct ui_functions : ui_util_functions {
     request_quit_to_menu = false;
     request_restart_mission = false;
     request_continue_after_debrief = false;
+    game_menu_open = false;
+    settings_open = false;
+    game_menu_index = 0;
+    settings_index = 0;
+    mission_over = false;
     pending_next_scenario.clear();
     current_objectives_text.clear();
     hud_next_slot = 0;

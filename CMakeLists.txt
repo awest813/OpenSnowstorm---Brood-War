@@ -144,3 +144,8 @@ if(OPENSNOWSTORM_BUILD_BWAPI)
 endif()
 
 add_executable(test_ui test_ui.cpp)
+
+add_executable(test_client_settings tests/test_client_settings.cpp)
+target_include_directories(test_client_settings PRIVATE ${CMAKE_SOURCE_DIR})
+opensnowstorm_apply_common_compile_options(test_client_settings)
+add_test(NAME ClientSettings COMMAND test_client_settings)

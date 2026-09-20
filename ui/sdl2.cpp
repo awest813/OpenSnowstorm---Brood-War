@@ -151,6 +151,17 @@ struct window_impl {
 	void update_surface() {
 		SDL_UpdateWindowSurface(window);
 	}
+
+	void set_fullscreen(bool enable) {
+		if (!window) return;
+		SDL_SetWindowFullscreen(window, enable ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+	}
+
+	bool is_fullscreen() const {
+		if (!window) return false;
+		Uint32 flags = SDL_GetWindowFlags(window);
+		return (flags & (SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) != 0;
+	}
 	
 	explicit operator bool() const {
 		return window != nullptr;
@@ -199,6 +210,14 @@ bool window::get_mouse_button_state(int button) {
 
 void window::update_surface() {
 	return impl->update_surface();
+}
+
+void window::set_fullscreen(bool enable) {
+	impl->set_fullscreen(enable);
+}
+
+bool window::is_fullscreen() const {
+	return impl->is_fullscreen();
 }
 
 window::operator bool() const {
