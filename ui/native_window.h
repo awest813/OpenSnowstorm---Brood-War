@@ -44,6 +44,8 @@ namespace native_window {
 		bool get_key_state(int scancode);
 		bool get_mouse_button_state(int button);
 		void update_surface();
+		void set_fullscreen(bool enable);
+		bool is_fullscreen() const;
 		explicit operator bool() const;
 	};
 }

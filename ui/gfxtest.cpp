@@ -169,7 +169,8 @@ enum class startup_content_kind {
 	map,
 	replay,
 	campaign_browser,
-	save
+	save,
+	settings
 };
 
 struct startup_entry {
@@ -193,7 +194,8 @@ struct campaign_episode {
 enum class frontend_view {
 	startup,
 	episodes,
-	missions
+	missions,
+	settings
 };
 
 std::vector<campaign_episode> get_all_campaigns() {
@@ -470,8 +472,9 @@ int startup_entry_priority(const startup_entry& entry) {
 	// "Continue" entries (resume last-played campaign mission) are pinned to
 	// the top so a player pressing Enter at the frontend resumes immediately.
 	if (entry.title.compare(0, 9, "Continue ") == 0) return -1;
-	if (entry.kind == startup_content_kind::save) return 1;
 	if (entry.kind == startup_content_kind::campaign_browser) return 0;
+	if (entry.kind == startup_content_kind::settings) return 1;
+	if (entry.kind == startup_content_kind::save) return 2;
 	std::string lower = lowercase_copy(entry.path);
 	bool campaign_like = lower.find("campaign") != std::string::npos || lower.find("broodwar") != std::string::npos;
 	if (entry.kind == startup_content_kind::map && campaign_like) return 5;
@@ -508,6 +511,13 @@ std::vector<startup_entry> discover_startup_entries(const std::string& data_dir)
 		entry.subtitle = "PLAY STARCRAFT AND BROOD WAR MISSIONS";
 		entries.push_back(std::move(entry));
 	}
+	{
+		startup_entry entry;
+		entry.kind = startup_content_kind::settings;
+		entry.title = "SETTINGS";
+		entry.subtitle = "SPEED, VOLUME, SCROLL, DISPLAY";
+		entries.push_back(std::move(entry));
+	}
 
 	std::vector<std::string> candidate_dirs;
 	push_unique_dir(candidate_dirs, "maps");
@@ -526,8 +536,8 @@ std::vector<startup_entry> discover_startup_entries(const std::string& data_dir)
 	}
 
 	for (const std::string& dir : candidate_dirs) {
-		scan_startup_directory(dir, 0, 3, entries, 6);
-		if (entries.size() >= 6) break;
+		scan_startup_directory(dir, 0, 3, entries, 8);
+		if (entries.size() >= 8) break;
 	}
 
 	std::sort(entries.begin(), entries.end(), [](const startup_entry& a, const startup_entry& b) {
@@ -536,7 +546,7 @@ std::vector<startup_entry> discover_startup_entries(const std::string& data_dir)
 		if (ap != bp) return ap < bp;
 		return canonicalize_path_for_compare(a.title) < canonicalize_path_for_compare(b.title);
 	});
-	if (entries.size() > 6) entries.resize(6);
+	if (entries.size() > 8) entries.resize(8);
 	return entries;
 }
 
@@ -1136,6 +1146,8 @@ struct main_t {
 	void enable_frontend(std::vector<startup_entry> entries) {
 		frontend_entries = std::move(entries);
 		frontend_active = true;
+		frontend_current_view = frontend_view::startup;
+		frontend_selected_episode = -1;
 		frontend_selected_index = frontend_entries.empty() ? -1 : 0;
 		frontend_status_message = frontend_entries.empty()
 			? "NO MAPS OR REPLAYS WERE DISCOVERED. PASS --MAP OR --REPLAY."
@@ -1150,6 +1162,7 @@ struct main_t {
 	int frontend_get_entry_count() const {
 		if (frontend_current_view == frontend_view::startup) return (int)frontend_entries.size();
 		if (frontend_current_view == frontend_view::episodes) return (int)get_all_campaigns().size();
+		if (frontend_current_view == frontend_view::settings) return (int)settings_item::count;
 		if (frontend_current_view == frontend_view::missions) {
 			auto eps = get_all_campaigns();
 			if (frontend_selected_episode >= 0 && frontend_selected_episode < (int)eps.size()) {
@@ -1163,10 +1176,12 @@ struct main_t {
 		int box_w = std::min<int>((int)ui.screen_width - 120, 900);
 		if (box_w < 320) box_w = std::max<int>((int)ui.screen_width - 40, 200);
 		int count = frontend_get_entry_count();
-		int box_h = count > 8 ? 48 : 64;
-		int gap = count > 8 ? 8 : 12;
+		int box_h = count > 10 ? 34 : (count > 8 ? 48 : 64);
+		int gap = count > 10 ? 4 : (count > 8 ? 8 : 12);
 		int total_h = count * box_h + std::max<int>(0, count - 1) * gap;
 		int start_y = std::max(150, ((int)ui.screen_height - total_h) / 2 + 30);
+		if (start_y + total_h > (int)ui.screen_height - 70)
+			start_y = std::max(140, (int)ui.screen_height - 70 - total_h);
 		int x = ((int)ui.screen_width - box_w) / 2;
 		int y = start_y + (int)index * (box_h + gap);
 		return rect{xy(x, y), xy(x + box_w, y + box_h)};
@@ -1184,6 +1199,10 @@ struct main_t {
 				load_save_file(entry.path);
 			} else if (entry.kind == startup_content_kind::campaign_browser) {
 				frontend_current_view = frontend_view::episodes;
+				frontend_selected_index = 0;
+				return;
+			} else if (entry.kind == startup_content_kind::settings) {
+				frontend_current_view = frontend_view::settings;
 				frontend_selected_index = 0;
 				return;
 			}
@@ -1299,6 +1318,8 @@ struct main_t {
 
 		if (frontend_current_view == frontend_view::episodes) {
 			subtitle = "SELECT CAMPAIGN EPISODE";
+		} else if (frontend_current_view == frontend_view::settings) {
+			subtitle = "GAME OPTIONS";
 		} else if (frontend_current_view == frontend_view::missions) {
 			auto eps = get_all_campaigns();
 			if (frontend_selected_episode >= 0 && frontend_selected_episode < (int)eps.size()) {
@@ -1315,7 +1336,9 @@ struct main_t {
 		draw_rgba_text(pixels, pitch, width, height, (width - text_pixel_width(subtitle, 2)) / 2, 106, subtitle, 2, subtitle_color);
 
 		std::string hint = "UP DOWN OR CLICK TO CHOOSE. ENTER TO LAUNCH.";
-		if (frontend_current_view != frontend_view::startup) {
+		if (frontend_current_view == frontend_view::settings) {
+			hint = "UP DOWN TO CHOOSE. LEFT RIGHT OR ENTER TO CHANGE. BACKSPACE TO GO BACK.";
+		} else if (frontend_current_view != frontend_view::startup) {
 			hint = "UP DOWN OR CLICK TO CHOOSE. ENTER TO SELECT. BACKSPACE TO GO BACK.";
 		} else if (frontend_entries.empty()) {
 			hint = "ADD .SCX .SCM OR .REP FILES BESIDE THE DATA INSTALL OR PASS --MAP.";
@@ -1343,6 +1366,9 @@ struct main_t {
 				auto& mission = eps[frontend_selected_episode].missions[i];
 				entry_title = mission.name;
 				entry_subtitle = mission.path;
+			} else if (frontend_current_view == frontend_view::settings) {
+				entry_title = settings_item_label(i);
+				entry_subtitle = settings_item_value(ui.settings, i);
 			}
 
 			int box_h = box.to.y - box.from.y;
@@ -1350,7 +1376,12 @@ struct main_t {
 			std::string index_text = std::to_string(i + 1);
 			draw_rgba_text(pixels, pitch, width, height, box.from.x + 14, box.from.y + 18 + y_off, index_text, 2, selected ? rgba32(255, 232, 160, 255) : rgba32(170, 184, 208, 255));
 			draw_rgba_text(pixels, pitch, width, height, box.from.x + 48, box.from.y + 12 + y_off, uppercase_copy(entry_title), 2, selected ? rgba32(255, 232, 160, 255) : rgba32(214, 220, 232, 255));
-			draw_rgba_text(pixels, pitch, width, height, box.from.x + 48, box.from.y + 38 + y_off, uppercase_copy(shorten_middle(entry_subtitle, 52)), 1, rgba32(142, 154, 178, 255));
+			if (frontend_current_view == frontend_view::settings) {
+				int vw = text_pixel_width(uppercase_copy(entry_subtitle), 2);
+				draw_rgba_text(pixels, pitch, width, height, box.to.x - vw - 18, box.from.y + 12 + y_off, uppercase_copy(entry_subtitle), 2, selected ? rgba32(255, 210, 96, 255) : rgba32(180, 196, 220, 255));
+			} else {
+				draw_rgba_text(pixels, pitch, width, height, box.from.x + 48, box.from.y + 38 + y_off, uppercase_copy(shorten_middle(entry_subtitle, 52)), 1, rgba32(142, 154, 178, 255));
+			}
 		}
 
 
@@ -1358,7 +1389,7 @@ struct main_t {
 			std::string status = uppercase_copy(shorten_middle(frontend_status_message, 88));
 			draw_rgba_text(pixels, pitch, width, height, (width - text_pixel_width(status, 1)) / 2, height - 76, status, 1, rgba32(255, 194, 112, 255));
 		}
-		std::string footer = std::string("F3 DEBUG OVERLAY   F4 SOUND: ") + (sound_enabled ? "ENABLED" : "DISABLED") + "   ESC CLOSE";
+		std::string footer = std::string("F3 DEBUG OVERLAY   F4 SOUND: ") + (ui.settings.sound_enabled ? "ENABLED" : "DISABLED") + "   ALT+ENTER FULLSCREEN   ESC CLOSE";
 		draw_rgba_text(pixels, pitch, width, height, (width - text_pixel_width(footer, 1)) / 2, height - 52, footer, 1, rgba32(112, 132, 164, 255));
 
 		frontend_surface->unlock();
@@ -1367,6 +1398,32 @@ struct main_t {
 		frontend_surface->blit(&*window_surface, 0, 0);
 		ui.wnd.update_surface();
 	}
+	void adjust_frontend_setting(int delta) {
+		if (frontend_current_view != frontend_view::settings) return;
+		if (frontend_selected_index < 0 || frontend_selected_index >= (int)settings_item::count) return;
+		ui.settings_index = frontend_selected_index;
+		ui.apply_settings_item(delta);
+		sound_enabled = ui.settings.sound_enabled;
+		campaign_fog_of_war = ui.settings.fog_of_war;
+		frontend_status_message = std::string(settings_item_label(frontend_selected_index)) + "  " +
+			settings_item_value(ui.settings, frontend_selected_index);
+	}
+
+	void activate_frontend_selection() {
+		if (frontend_current_view == frontend_view::startup) launch_frontend_entry(frontend_selected_index);
+		else if (frontend_current_view == frontend_view::episodes) launch_campaign_episode(frontend_selected_index);
+		else if (frontend_current_view == frontend_view::missions) launch_campaign_mission(frontend_selected_episode, frontend_selected_index);
+		else if (frontend_current_view == frontend_view::settings) adjust_frontend_setting(1);
+	}
+
+	void frontend_go_back() {
+		if (frontend_current_view == frontend_view::episodes || frontend_current_view == frontend_view::settings)
+			frontend_current_view = frontend_view::startup;
+		else if (frontend_current_view == frontend_view::missions)
+			frontend_current_view = frontend_view::episodes;
+		frontend_selected_index = 0;
+	}
+
 	void update_frontend() {
 		if (!ui.wnd) return;
 		native_window::event_t e;
@@ -1394,9 +1451,7 @@ struct main_t {
 						rect box = frontend_entry_rect(i);
 						if (e.mouse_x >= box.from.x && e.mouse_x < box.to.x && e.mouse_y >= box.from.y && e.mouse_y < box.to.y) {
 							frontend_selected_index = i;
-							if (frontend_current_view == frontend_view::startup) launch_frontend_entry(i);
-							else if (frontend_current_view == frontend_view::episodes) launch_campaign_episode(i);
-							else if (frontend_current_view == frontend_view::missions) launch_campaign_mission(frontend_selected_episode, i);
+							activate_frontend_selection();
 							break;
 						}
 					}
@@ -1405,22 +1460,23 @@ struct main_t {
 			case native_window::event_t::type_key_down:
 				if (e.sym == 27) {
 					if (frontend_current_view != frontend_view::startup) {
-						if (frontend_current_view == frontend_view::episodes) frontend_current_view = frontend_view::startup;
-						else if (frontend_current_view == frontend_view::missions) frontend_current_view = frontend_view::episodes;
-						frontend_selected_index = 0;
+						frontend_go_back();
 					} else {
 						std::exit(0);
 					}
 				} else if (e.sym == 8) { // Backspace
-					if (frontend_current_view == frontend_view::episodes) frontend_current_view = frontend_view::startup;
-					else if (frontend_current_view == frontend_view::missions) frontend_current_view = frontend_view::episodes;
-					frontend_selected_index = 0;
+					frontend_go_back();
 				} else if (e.scancode == 60) {
 					ui.show_debug_overlay = !ui.show_debug_overlay;
 				} else if (e.scancode == 61) {
-					sound_enabled = !sound_enabled;
-					ui.global_volume = sound_enabled ? 50 : 0;
+					ui.settings.sound_enabled = !ui.settings.sound_enabled;
+					ui.apply_client_settings(ui.settings);
+					ui.persist_client_settings();
+					sound_enabled = ui.settings.sound_enabled;
 					log("client: sound %s\n", sound_enabled ? "enabled" : "disabled");
+				} else if ((ui.wnd.get_key_state(226) || ui.wnd.get_key_state(230)) &&
+					(e.sym == '\r' || e.sym == '\n' || e.scancode == 40)) {
+					ui.toggle_fullscreen_setting();
 				} else {
 					int count = frontend_get_entry_count();
 					if (count > 0) {
@@ -1428,16 +1484,17 @@ struct main_t {
 							frontend_selected_index = (frontend_selected_index + count - 1) % count;
 						} else if (e.scancode == 81 || e.sym == 's') {
 							frontend_selected_index = (frontend_selected_index + 1) % count;
+						} else if (e.scancode == 80) {
+							adjust_frontend_setting(-1);
+						} else if (e.scancode == 79) {
+							adjust_frontend_setting(1);
 						} else if (e.sym == '\r' || e.sym == ' ' || e.scancode == 40 || e.scancode == 88) {
-							if (frontend_current_view == frontend_view::startup) launch_frontend_entry(frontend_selected_index);
-							else if (frontend_current_view == frontend_view::episodes) launch_campaign_episode(frontend_selected_index);
-							else if (frontend_current_view == frontend_view::missions) launch_campaign_mission(frontend_selected_episode, frontend_selected_index);
+							activate_frontend_selection();
 						} else if (e.sym >= '1' && e.sym <= '9') {
 							int requested = e.sym - '1';
 							if (requested >= 0 && requested < count) {
-								if (frontend_current_view == frontend_view::startup) launch_frontend_entry(requested);
-								else if (frontend_current_view == frontend_view::episodes) launch_campaign_episode(requested);
-								else if (frontend_current_view == frontend_view::missions) launch_campaign_mission(frontend_selected_episode, requested);
+								frontend_selected_index = requested;
+								activate_frontend_selection();
 							}
 						}
 					}
@@ -2003,6 +2060,7 @@ struct main_t {
 
 	void draw_objectives_overlay(uint32_t* pixels, int pitch, int width, int height) {
 		if (mission_result.active || frontend_active || !ui.is_live_game_mode) return;
+		if (!ui.settings.show_objectives) return;
 		if (ui.current_objectives_text.empty()) return;
 		refresh_objectives_cache();
 		if (cached_objectives_lines.empty()) return;
@@ -2105,17 +2163,67 @@ struct main_t {
 		}
 	}
 
+	void draw_game_menu_overlay(uint32_t* pixels, int pitch, int width, int height) {
+		if (!ui.game_menu_open || frontend_active) return;
+		auto layout = make_game_menu_layout(width, height);
+		fill_rgba_rect(pixels, pitch, width, height, 0, 0, width, height, rgba32(0, 0, 0, 120));
+		fill_rgba_rect(pixels, pitch, width, height, layout.x, layout.y, layout.w, layout.h, rgba32(8, 12, 24, 236));
+		draw_rgba_frame(pixels, pitch, width, height, layout.x, layout.y, layout.w, layout.h, 2, rgba32(255, 210, 96, 255));
+		draw_rgba_text(pixels, pitch, width, height,
+			layout.x + (layout.w - text_pixel_width("GAME MENU", 2)) / 2,
+			layout.y + 16, "GAME MENU", 2, rgba32(255, 232, 160, 255));
+		for (int i = 0; i < layout.count; ++i) {
+			overlay_rect r = layout.item_rect(i);
+			bool selected = i == ui.game_menu_index;
+			fill_rgba_rect(pixels, pitch, width, height, r.x, r.y, r.w, r.h,
+				selected ? rgba32(60, 36, 10, 230) : rgba32(16, 20, 32, 210));
+			draw_rgba_frame(pixels, pitch, width, height, r.x, r.y, r.w, r.h, 1,
+				selected ? rgba32(255, 210, 96, 255) : rgba32(90, 104, 128, 200));
+			std::string label = game_menu_item_label(i);
+			int lx = r.x + (r.w - text_pixel_width(label, 2)) / 2;
+			draw_rgba_text(pixels, pitch, width, height, lx, r.y + (r.h - 16) / 2, label, 2,
+				selected ? rgba32(255, 232, 160, 255) : rgba32(214, 220, 232, 255));
+		}
+	}
+
+	void draw_settings_overlay(uint32_t* pixels, int pitch, int width, int height) {
+		if (!ui.settings_open || frontend_active) return;
+		auto layout = make_settings_layout(width, height);
+		fill_rgba_rect(pixels, pitch, width, height, 0, 0, width, height, rgba32(0, 0, 0, 140));
+		fill_rgba_rect(pixels, pitch, width, height, layout.x, layout.y, layout.w, layout.h, rgba32(8, 12, 24, 240));
+		draw_rgba_frame(pixels, pitch, width, height, layout.x, layout.y, layout.w, layout.h, 2, rgba32(255, 210, 96, 255));
+		draw_rgba_text(pixels, pitch, width, height,
+			layout.x + (layout.w - text_pixel_width("OPTIONS", 2)) / 2,
+			layout.y + 16, "OPTIONS", 2, rgba32(255, 232, 160, 255));
+		for (int i = 0; i < layout.count; ++i) {
+			overlay_rect r = layout.item_rect(i);
+			bool selected = i == ui.settings_index;
+			fill_rgba_rect(pixels, pitch, width, height, r.x, r.y, r.w, r.h,
+				selected ? rgba32(60, 36, 10, 230) : rgba32(16, 20, 32, 210));
+			draw_rgba_frame(pixels, pitch, width, height, r.x, r.y, r.w, r.h, 1,
+				selected ? rgba32(255, 210, 96, 255) : rgba32(90, 104, 128, 200));
+			std::string label = settings_item_label(i);
+			std::string value = uppercase_copy(settings_item_value(ui.settings, i));
+			draw_rgba_text(pixels, pitch, width, height, r.x + 10, r.y + (r.h - 16) / 2, label, 1,
+				selected ? rgba32(255, 232, 160, 255) : rgba32(200, 210, 224, 255));
+			int vw = text_pixel_width(value, 2);
+			draw_rgba_text(pixels, pitch, width, height, r.x + r.w - vw - 12, r.y + (r.h - 16) / 2, value, 2,
+				selected ? rgba32(255, 210, 96, 255) : rgba32(180, 196, 220, 255));
+		}
+	}
+
 	void draw_pause_overlay(uint32_t* pixels, int pitch, int width, int height) {
 		if (frontend_active || !ui.is_live_game_mode) return;
 		if (!ui.is_paused || mission_result.active) return;
+		if (ui.game_menu_open || ui.settings_open) return;
 
 		static const std::vector<std::string> paused_lines = {
 			"PAUSED",
 			"",
 			"SPACE OR P   RESUME",
+			"F10 GAME MENU   ESC GAME MENU",
 			"F5 SAVE  F6 SLOT-SAVE  F8 LOAD  F9 SLOT-LOAD",
-			"F7 RESTART   F10 MENU",
-			"ESC          MENU",
+			"F7 RESTART",
 		};
 		std::vector<std::string> briefing_lines;
 		const std::vector<std::string>* lines = &paused_lines;
@@ -2127,7 +2235,7 @@ struct main_t {
 				"MISSION: " + name,
 				"",
 				"PRESS SPACE TO BEGIN",
-				"ESC TO RETURN TO MENU",
+				"F10 OR ESC FOR GAME MENU",
 			};
 			lines = &briefing_lines;
 		}
@@ -2377,6 +2485,8 @@ struct main_t {
 		draw_save_slot_indicator(pixels, pitch, width, height);
 		draw_mission_timer(pixels, pitch, width, height);
 		draw_pause_overlay(pixels, pitch, width, height);
+		draw_game_menu_overlay(pixels, pitch, width, height);
+		draw_settings_overlay(pixels, pitch, width, height);
 		draw_debrief_overlay(pixels, pitch, width, height);
 		draw_briefing_text_overlay(pixels, pitch, width, height);
 	}
@@ -3472,7 +3582,7 @@ static int run_bench(int bench_frames, const char* replay_file) {
 static void print_usage(const char* argv0) {
 	log(
 		"usage:\n"
-		"  %s [--replay <file.rep>] [--data-dir <path>] [--headless]\n"
+		"  %s [--replay <file.rep>] [--data-dir <path>] [--config <options.ini>] [--headless]\n"
 		"  %s                              (interactive startup frontend)\n"
 		"  %s --map <file.scx|file.scm> [--local-player <0-7>] [--enemy-player <0-7>]\n"
 		"     [--data-dir <path>]\n"
@@ -3503,7 +3613,8 @@ static void print_usage(const char* argv0) {
 		"      Mission objectives set by map triggers render as a persistent top-left panel.\n"
 		"      Victory and defeat show a debrief overlay with time, unit/building stats, kills, and resources.\n"
 		"      Press Enter on the debrief to advance (next mission if available, else startup shell).\n"
-		"      Esc while paused (briefing, pause, or result) returns to the startup shell.\n"
+		"      F10 or Esc opens the Game Menu (Options, Save/Load, Restart, Exit to Menu).\n"
+		"      Settings are stored in options.ini (or --config) and include speed, volume, scroll, and display.\n"
 		"\n"
 		"single-player controls (map mode):\n"
 		"  left drag/select    left click command panel (multi tactical + single-unit production/abilities)   middle drag camera\n"
@@ -3516,11 +3627,12 @@ static void print_usage(const char* argv0) {
 		"  i stim pack (Marine/Firebat)   m merge archon/dark archon (High/Dark Templar)\n"
 		"  tab center camera on selection\n"
 		"  ctrl+<1-0> set group   shift+<1-0> add group   <1-0> recall group\n"
-		"  esc cancel armed building/landing/spell targeting; when paused returns to startup shell\n"
+		"  esc cancel targeting; otherwise open Game Menu\n"
 		"  f toggle fog of war\n"
 		"  F3 toggle debug overlay (frame counter, draw fps, game speed)\n"
 		"  F5 quicksave   F6 save to slot   F8 quickload   F9 load from slot\n"
-		"  Ctrl+1-9 select save slot   F7 restart   F10 return to shell\n"
+		"  Ctrl+1-9 select save slot   F7 restart   F10 Game Menu\n"
+		"  alt+enter toggle fullscreen\n"
 		"  enter dismiss post-mission debrief (continue / retry / return to shell)\n"
 		"  space/p pause       u speed up                 z/d speed down\n"
 		"\n"
@@ -3878,6 +3990,7 @@ int main(int argc, char** argv) {
 		const char* extract_scenario_chk_file = nullptr;
 		bool gen_test_replay_use_map_settings = false;
 		const char* fixture_script_name = nullptr;
+		const char* config_file = nullptr;
 
 		for (int i = 1; i < argc; ++i) {
 			if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
@@ -3900,6 +4013,12 @@ int main(int argc, char** argv) {
 					return 2;
 				}
 				data_dir_arg = argv[++i];
+			} else if (strcmp(argv[i], "--config") == 0) {
+				if (i + 1 >= argc) {
+					log("error: --config requires a file path\n");
+					return 2;
+				}
+				config_file = argv[++i];
 			} else if (strcmp(argv[i], "--bench") == 0) {
 				if (i + 1 >= argc) {
 					log("error: --bench requires frame count\n");
@@ -4046,8 +4165,11 @@ int main(int argc, char** argv) {
 		};
 
 		log("initializing ui...\n");
+		if (config_file) ui.options_path = config_file;
 		ui.init();
 		log("ui initialized\n");
+		m.campaign_fog_of_war = ui.settings.fog_of_war;
+		m.sound_enabled = ui.settings.sound_enabled;
 
 		ui.rgba_overlay_cb = [&m](uint32_t* pixels, int pitch, int width, int height) {
 			m.draw_client_overlays(pixels, pitch, width, height);
@@ -4059,6 +4181,8 @@ int main(int argc, char** argv) {
 
 		if (map_file) {
 			m.campaign_fog_of_war = map_fog_of_war;
+			ui.settings.fog_of_war = map_fog_of_war;
+			ui.default_enforce_local_visibility = map_fog_of_war;
 			m.campaign_local_race = local_race;
 			m.campaign_enemy_race = enemy_race;
 			m.campaign_game_type = map_game_type;
